@@ -99,6 +99,10 @@ class Watermarker_PDF_Processor {
 
                     $pdf->AddPage( $size['orientation'], [ $size['width'], $size['height'] ] );
 
+                    // Content first (as base layer — may have opaque background).
+                    $pdf->useTemplate( $tpl );
+
+                    // Letterhead on top (designed with transparent center area).
                     $show_lh = ( 1 === $i ) || $apply_all;
                     if ( $show_lh ) {
                         $this->apply_letterhead(
@@ -111,9 +115,6 @@ class Watermarker_PDF_Processor {
                             $size['height']
                         );
                     }
-
-                    // Content on top.
-                    $pdf->useTemplate( $tpl );
                 }
             }
 
@@ -390,6 +391,51 @@ class Watermarker_PDF_Processor {
         return $tmp;
     }
 
+    /**
+     * Recursively walk PhpWord elements and force single line spacing.
+     */
+    private function fix_phpword_spacing( $container ) {
+        if ( ! method_exists( $container, 'getElements' ) ) {
+            return;
+        }
+
+        foreach ( $container->getElements() as $element ) {
+            // Fix paragraph spacing.
+            if ( $element instanceof \PhpOffice\PhpWord\Element\TextRun
+              || $element instanceof \PhpOffice\PhpWord\Element\Text ) {
+                if ( method_exists( $element, 'getParagraphStyle' ) ) {
+                    $pStyle = $element->getParagraphStyle();
+                    if ( is_object( $pStyle ) ) {
+                        $pStyle->setLineHeight( 1.0 );
+                        $pStyle->setSpaceBefore( 0 );
+                        $pStyle->setSpaceAfter( 0 );
+                    }
+                }
+            }
+
+            if ( method_exists( $element, 'getParagraphStyle' ) ) {
+                $pStyle = $element->getParagraphStyle();
+                if ( is_object( $pStyle ) ) {
+                    $pStyle->setLineHeight( 1.0 );
+                    $pStyle->setSpaceBefore( 0 );
+                    $pStyle->setSpaceAfter( 0 );
+                }
+            }
+
+            // Recurse into containers (tables, cells, headers, footers, textboxes).
+            if ( method_exists( $element, 'getElements' ) ) {
+                $this->fix_phpword_spacing( $element );
+            }
+            if ( method_exists( $element, 'getRows' ) ) {
+                foreach ( $element->getRows() as $row ) {
+                    foreach ( $row->getCells() as $cell ) {
+                        $this->fix_phpword_spacing( $cell );
+                    }
+                }
+            }
+        }
+    }
+
     private function convert_with_phpword( $file_path, $ext ) {
         $reader_map = [
             'docx' => 'Word2007',
@@ -404,6 +450,11 @@ class Watermarker_PDF_Processor {
         }
 
         $phpWord = \PhpOffice\PhpWord\IOFactory::createReader( $reader_name )->load( $file_path );
+
+        // Force single line spacing on all paragraphs loaded from the document.
+        foreach ( $phpWord->getSections() as $section ) {
+            $this->fix_phpword_spacing( $section );
+        }
 
         $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
 
