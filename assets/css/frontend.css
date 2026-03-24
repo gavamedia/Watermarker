@@ -37,7 +37,8 @@ body.watermarker-page {
 
 .wm-logo {
     display: block;
-    max-height: 6em;
+    height: 6em;
+    width: auto;
     max-width: 240px;
     margin: 0 auto 16px;
 }

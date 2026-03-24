@@ -255,19 +255,111 @@ class Watermarker_PDF_Processor {
     /** Extensions that PhpWord can handle as a last resort (no shell needed). */
     private const PHPWORD_EXT = [ 'docx', 'rtf', 'html', 'htm' ];
 
-    /** Font substitution map: Microsoft font → macOS-available font. */
+    /**
+     * Font substitution map: each entry lists fallbacks in priority order.
+     * The first font found on the system wins. If none are found, the last
+     * entry is used as a safe default (core fonts available everywhere).
+     */
     private const FONT_MAP = [
-        'Aptos'            => 'Times New Roman',
-        'Aptos Display'    => 'Times New Roman',
-        'Aptos Narrow'     => 'Times New Roman',
-        'Calibri'          => 'Helvetica',
-        'Calibri Light'    => 'Helvetica Neue Light',
-        'Cambria'          => 'Times New Roman',
-        'Segoe UI'         => 'Helvetica Neue',
-        'Consolas'         => 'Courier New',
-        'Cascadia Code'    => 'Courier New',
-        'Cascadia Mono'    => 'Courier New',
+        'Aptos'            => [ 'Aptos', 'Helvetica Neue', 'Helvetica', 'Arial' ],
+        'Aptos Display'    => [ 'Aptos Display', 'Helvetica Neue', 'Helvetica', 'Arial' ],
+        'Aptos Narrow'     => [ 'Aptos Narrow', 'Helvetica Neue', 'Helvetica', 'Arial' ],
+        'Calibri'          => [ 'Calibri', 'Helvetica Neue', 'Helvetica', 'Arial' ],
+        'Calibri Light'    => [ 'Calibri Light', 'Helvetica Neue Light', 'Helvetica', 'Arial' ],
+        'Cambria'          => [ 'Cambria', 'Times New Roman', 'Times' ],
+        'Segoe UI'         => [ 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial' ],
+        'Consolas'         => [ 'Consolas', 'Courier New', 'Courier' ],
+        'Cascadia Code'    => [ 'Cascadia Code', 'Courier New', 'Courier' ],
+        'Cascadia Mono'    => [ 'Cascadia Mono', 'Courier New', 'Courier' ],
     ];
+
+    /** Cache of resolved font substitutions. */
+    private static $resolved_fonts = null;
+
+    /**
+     * Build the effective font map by checking which fonts are installed.
+     * Returns [ 'Aptos' => 'Times New Roman', ... ] with only the entries
+     * that actually need substituting.
+     */
+    private static function get_font_substitutions() {
+        if ( null !== self::$resolved_fonts ) {
+            return self::$resolved_fonts;
+        }
+
+        $installed = self::get_installed_fonts();
+        self::$resolved_fonts = [];
+
+        foreach ( self::FONT_MAP as $original => $fallbacks ) {
+            // If the original font is installed, no substitution needed.
+            if ( isset( $installed[ strtolower( $original ) ] ) ) {
+                continue;
+            }
+            // Find the first available fallback.
+            foreach ( $fallbacks as $candidate ) {
+                if ( $candidate === $original ) {
+                    continue;
+                }
+                if ( isset( $installed[ strtolower( $candidate ) ] ) ) {
+                    self::$resolved_fonts[ $original ] = $candidate;
+                    break;
+                }
+            }
+            // If nothing found, use the last fallback (core font, should always exist).
+            if ( ! isset( self::$resolved_fonts[ $original ] ) ) {
+                self::$resolved_fonts[ $original ] = end( $fallbacks );
+            }
+        }
+
+        return self::$resolved_fonts;
+    }
+
+    /**
+     * Get a set of installed font family names (lowercased) on this system.
+     */
+    private static function get_installed_fonts() {
+        static $cache = null;
+        if ( null !== $cache ) {
+            return $cache;
+        }
+
+        $cache = [];
+        $dirs  = [];
+
+        if ( PHP_OS_FAMILY === 'Darwin' ) {
+            $dirs = [
+                '/System/Library/Fonts',
+                '/Library/Fonts',
+                getenv( 'HOME' ) . '/Library/Fonts',
+            ];
+        } elseif ( PHP_OS_FAMILY === 'Linux' ) {
+            $dirs = [
+                '/usr/share/fonts',
+                '/usr/local/share/fonts',
+                getenv( 'HOME' ) . '/.fonts',
+            ];
+        } elseif ( PHP_OS_FAMILY === 'Windows' ) {
+            $dirs = [ getenv( 'WINDIR' ) . '\\Fonts' ];
+        }
+
+        foreach ( $dirs as $dir ) {
+            if ( ! is_dir( $dir ) ) {
+                continue;
+            }
+            $it = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $dir, \FilesystemIterator::SKIP_DOTS ) );
+            foreach ( $it as $file ) {
+                $ext = strtolower( pathinfo( $file->getFilename(), PATHINFO_EXTENSION ) );
+                if ( in_array( $ext, [ 'ttf', 'otf', 'ttc', 'woff', 'woff2' ], true ) ) {
+                    // Derive family name from filename (e.g. "TimesNewRoman-Bold.ttf" → "times new roman").
+                    $name = pathinfo( $file->getFilename(), PATHINFO_FILENAME );
+                    $name = preg_replace( '/[-_](Bold|Italic|Light|Regular|Medium|Thin|Semi|Demi|Extra|Condensed|BoldItalic|It|Bd|Rg|Lt|Bk|Blk).*$/i', '', $name );
+                    $name = preg_replace( '/([a-z])([A-Z])/', '$1 $2', $name ); // CamelCase → spaces.
+                    $cache[ strtolower( trim( $name ) ) ] = true;
+                }
+            }
+        }
+
+        return $cache;
+    }
 
     private function convert_office_to_pdf( $file_path, $ext ) {
         // Pre-process DOCX: fix fonts and spacing directly in the ZIP XML.
@@ -340,8 +432,8 @@ class Watermarker_PDF_Processor {
 
             $modified = false;
 
-            // Replace font names.
-            foreach ( self::FONT_MAP as $from => $to ) {
+            // Replace fonts only when the original isn't installed on this system.
+            foreach ( self::get_font_substitutions() as $from => $to ) {
                 $count = 0;
                 $xml = str_ireplace(
                     [ 'w:ascii="' . $from . '"', 'w:hAnsi="' . $from . '"', 'w:cs="' . $from . '"', 'w:eastAsia="' . $from . '"', 'val="' . $from . '"' ],
@@ -376,78 +468,89 @@ class Watermarker_PDF_Processor {
     }
 
     /**
-     * Read the document default line spacing from the DOCX XML so we can
-     * apply it in PhpWord (which doesn't read w:line from DOCX at all).
+     * Parse styles.xml to extract the line spacing for each named style
+     * and the document default. Returns:
+     *   [ 'default' => 1.16, 'styles' => [ 'xmsonormal' => 1.0, ... ] ]
      */
-    private function read_docx_default_spacing( $file_path ) {
-        $defaults = [
-            'lineHeight' => 1.15,  // Word's default (278/240 ≈ 1.16)
-            'after'      => 160,   // Word's default: 8pt = 160 twips
-            'before'     => 0,
+    private function read_docx_spacing_map( $file_path ) {
+        $result = [
+            'default' => 1.0,
+            'styles'  => [],
         ];
 
         $ext = strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) );
         if ( 'docx' !== $ext ) {
-            return $defaults;
+            return $result;
         }
 
         $zip = new \ZipArchive();
         if ( $zip->open( $file_path, \ZipArchive::RDONLY ) !== true ) {
-            return $defaults;
+            return $result;
         }
 
         $styles_xml = $zip->getFromName( 'word/styles.xml' );
         $zip->close();
 
         if ( false === $styles_xml ) {
-            return $defaults;
+            return $result;
         }
 
-        // Read pPrDefault spacing: <w:spacing w:after="160" w:line="278" w:lineRule="auto"/>
-        if ( preg_match( '/<w:pPrDefault>\s*<w:pPr>\s*<w:spacing([^\/]*)\/>/', $styles_xml, $m ) ) {
-            $attrs = $m[1];
-            if ( preg_match( '/w:line="(\d+)"/', $attrs, $lm ) ) {
-                $defaults['lineHeight'] = (int) $lm[1] / 240.0; // Convert twips to multiplier.
-            }
-            if ( preg_match( '/w:after="(\d+)"/', $attrs, $am ) ) {
-                $defaults['after'] = (int) $am[1];
-            }
-            if ( preg_match( '/w:before="(\d+)"/', $attrs, $bm ) ) {
-                $defaults['before'] = (int) $bm[1];
+        // 1. Document default from pPrDefault.
+        if ( preg_match( '/<w:pPrDefault>.*?<\/w:pPrDefault>/s', $styles_xml, $dm ) ) {
+            if ( preg_match( '/w:line="(\d+)"/', $dm[0], $lm ) ) {
+                $result['default'] = (int) $lm[1] / 240.0;
             }
         }
 
-        return $defaults;
+        // 2. Per-style line spacing.
+        //    Match each <w:style ... w:styleId="xxx"> ... </w:style> block.
+        if ( preg_match_all( '/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>.*?<\/w:style>/s', $styles_xml, $sm, PREG_SET_ORDER ) ) {
+            foreach ( $sm as $style_match ) {
+                $style_id = $style_match[1];
+                $block    = $style_match[0];
+
+                // Look for w:spacing with w:line inside this style's pPr.
+                if ( preg_match( '/<w:pPr>.*?<\/w:pPr>/s', $block, $ppr ) ) {
+                    if ( preg_match( '/w:line="(\d+)"/', $ppr[0], $slm ) ) {
+                        $result['styles'][ $style_id ] = (int) $slm[1] / 240.0;
+                    }
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**
-     * Fix PhpWord spacing: set lineHeight on all styles (PhpWord doesn't read
-     * w:line from DOCX), and respect the paragraph-level overrides.
+     * Fix PhpWord spacing: set lineHeight on all styles using the actual
+     * values parsed from the DOCX (PhpWord doesn't read w:line at all).
      */
-    private function fix_phpword_all_spacing( $phpWord, $defaults ) {
-        $defLineHeight = $defaults['lineHeight'];
+    private function fix_phpword_all_spacing( $phpWord, $spacing_map ) {
+        $defLineHeight = $spacing_map['default'];
+        $styleLineMap  = $spacing_map['styles'];
 
         // 1. Fix all named styles in the global registry.
-        //    Set lineHeight since PhpWord never reads w:line from DOCX.
         $styles = \PhpOffice\PhpWord\Style::getStyles();
         foreach ( $styles as $name => $style ) {
+            // Determine the correct line height for this style.
+            $lh = $styleLineMap[ $name ] ?? $defLineHeight;
+
             if ( $style instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                // Only set lineHeight if not already set (PhpWord leaves it null).
                 if ( null === $style->getLineHeight() ) {
-                    $style->setLineHeight( $defLineHeight );
+                    $style->setLineHeight( $lh );
                 }
             }
             if ( $style instanceof \PhpOffice\PhpWord\Style\Font ) {
                 try {
                     $pStyle = $style->getParagraph();
                     if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
-                        $pStyle->setLineHeight( $defLineHeight );
+                        $pStyle->setLineHeight( $lh );
                     }
                 } catch ( \Throwable $e ) {}
             }
         }
 
-        // 2. Walk all sections/elements and set lineHeight on inline styles.
+        // 2. Walk all elements and set lineHeight on inline paragraph styles.
         foreach ( $phpWord->getSections() as $section ) {
             $this->fix_phpword_spacing( $section, $defLineHeight );
         }
@@ -455,7 +558,6 @@ class Watermarker_PDF_Processor {
 
     /**
      * Recursively walk PhpWord elements and set lineHeight where missing.
-     * Preserves spaceBefore/spaceAfter as read from the document.
      */
     private function fix_phpword_spacing( $container, $defLineHeight ) {
         if ( ! method_exists( $container, 'getElements' ) ) {
@@ -465,10 +567,8 @@ class Watermarker_PDF_Processor {
         foreach ( $container->getElements() as $element ) {
             if ( method_exists( $element, 'getParagraphStyle' ) ) {
                 $pStyle = $element->getParagraphStyle();
-                if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                    if ( null === $pStyle->getLineHeight() ) {
-                        $pStyle->setLineHeight( $defLineHeight );
-                    }
+                if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
+                    $pStyle->setLineHeight( $defLineHeight );
                 }
             }
 
@@ -484,7 +584,6 @@ class Watermarker_PDF_Processor {
                 }
             }
 
-            // Recurse into containers (tables, cells, headers, footers, textboxes).
             if ( method_exists( $element, 'getElements' ) ) {
                 $this->fix_phpword_spacing( $element, $defLineHeight );
             }
@@ -511,13 +610,13 @@ class Watermarker_PDF_Processor {
             throw new \Exception( "No PHP-native reader for .{$ext} files." );
         }
 
-        // Read actual spacing defaults from the DOCX before PhpWord loads it.
-        $spacing_defaults = $this->read_docx_default_spacing( $file_path );
+        // Read per-style line spacing from the DOCX (PhpWord doesn't read w:line).
+        $spacing_map = $this->read_docx_spacing_map( $file_path );
 
         $phpWord = \PhpOffice\PhpWord\IOFactory::createReader( $reader_name )->load( $file_path );
 
-        // Apply line height (PhpWord doesn't read w:line from DOCX).
-        $this->fix_phpword_all_spacing( $phpWord, $spacing_defaults );
+        // Apply the correct line height to each style.
+        $this->fix_phpword_all_spacing( $phpWord, $spacing_map );
 
         $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
 
