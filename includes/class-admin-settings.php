@@ -13,6 +13,13 @@ class Watermarker_Admin_Settings {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
         add_action( 'update_option_watermarker_url_slug', [ $this, 'on_slug_change' ], 10, 2 );
+        add_filter( 'plugin_action_links_' . plugin_basename( WATERMARKER_PLUGIN_DIR . 'watermarker.php' ), [ $this, 'add_action_links' ] );
+    }
+
+    public function add_action_links( $links ) {
+        $settings_link = '<a href="' . esc_url( admin_url( 'options-general.php?page=watermarker' ) ) . '">Settings</a>';
+        array_unshift( $links, $settings_link );
+        return $links;
     }
 
     public function add_menu_page() {
