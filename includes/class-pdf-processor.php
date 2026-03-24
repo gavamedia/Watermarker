@@ -392,6 +392,38 @@ class Watermarker_PDF_Processor {
     }
 
     /**
+     * Fix all named paragraph styles in PhpWord's global style registry,
+     * then walk all elements to fix inline styles and string references.
+     */
+    private function fix_phpword_all_spacing( $phpWord ) {
+        // 1. Fix all named styles in the global registry.
+        $styles = \PhpOffice\PhpWord\Style::getStyles();
+        foreach ( $styles as $name => $style ) {
+            if ( $style instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
+                $style->setLineHeight( 1.0 );
+                $style->setSpaceBefore( 0 );
+                $style->setSpaceAfter( 0 );
+            }
+            // Font styles can also carry paragraph info.
+            if ( $style instanceof \PhpOffice\PhpWord\Style\Font ) {
+                try {
+                    $pStyle = $style->getParagraph();
+                    if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
+                        $pStyle->setLineHeight( 1.0 );
+                        $pStyle->setSpaceBefore( 0 );
+                        $pStyle->setSpaceAfter( 0 );
+                    }
+                } catch ( \Throwable $e ) {}
+            }
+        }
+
+        // 2. Walk all sections/elements and fix inline paragraph styles.
+        foreach ( $phpWord->getSections() as $section ) {
+            $this->fix_phpword_spacing( $section );
+        }
+    }
+
+    /**
      * Recursively walk PhpWord elements and force single line spacing.
      */
     private function fix_phpword_spacing( $container ) {
@@ -400,25 +432,28 @@ class Watermarker_PDF_Processor {
         }
 
         foreach ( $container->getElements() as $element ) {
-            // Fix paragraph spacing.
-            if ( $element instanceof \PhpOffice\PhpWord\Element\TextRun
-              || $element instanceof \PhpOffice\PhpWord\Element\Text ) {
-                if ( method_exists( $element, 'getParagraphStyle' ) ) {
-                    $pStyle = $element->getParagraphStyle();
-                    if ( is_object( $pStyle ) ) {
-                        $pStyle->setLineHeight( 1.0 );
-                        $pStyle->setSpaceBefore( 0 );
-                        $pStyle->setSpaceAfter( 0 );
-                    }
-                }
-            }
-
             if ( method_exists( $element, 'getParagraphStyle' ) ) {
                 $pStyle = $element->getParagraphStyle();
-                if ( is_object( $pStyle ) ) {
+                if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
                     $pStyle->setLineHeight( 1.0 );
                     $pStyle->setSpaceBefore( 0 );
                     $pStyle->setSpaceAfter( 0 );
+                }
+                // String reference — the named style was already fixed above.
+            }
+
+            // Also fix font-level paragraph styles.
+            if ( method_exists( $element, 'getFontStyle' ) ) {
+                $fStyle = $element->getFontStyle();
+                if ( $fStyle instanceof \PhpOffice\PhpWord\Style\Font ) {
+                    try {
+                        $pStyle = $fStyle->getParagraph();
+                        if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
+                            $pStyle->setLineHeight( 1.0 );
+                            $pStyle->setSpaceBefore( 0 );
+                            $pStyle->setSpaceAfter( 0 );
+                        }
+                    } catch ( \Throwable $e ) {}
                 }
             }
 
@@ -451,10 +486,8 @@ class Watermarker_PDF_Processor {
 
         $phpWord = \PhpOffice\PhpWord\IOFactory::createReader( $reader_name )->load( $file_path );
 
-        // Force single line spacing on all paragraphs loaded from the document.
-        foreach ( $phpWord->getSections() as $section ) {
-            $this->fix_phpword_spacing( $section );
-        }
+        // Force single line spacing on all styles and paragraphs.
+        $this->fix_phpword_all_spacing( $phpWord );
 
         $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
 
