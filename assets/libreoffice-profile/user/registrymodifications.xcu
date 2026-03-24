@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+ <!-- Use Word-compatible paragraph spacing -->
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility/WriterCompatibilityVersion"><prop oor:name="UseWord2013TrackBottomHyphenation" oor:op="fuse"><value>true</value></prop></item>
+
+ <!-- Do not add extra spacing between paragraphs and tables -->
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility"><prop oor:name="AddSpacing" oor:op="fuse"><value>false</value></prop></item>
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility"><prop oor:name="AddSpacingAtPages" oor:op="fuse"><value>false</value></prop></item>
+
+ <!-- Use MS Word line spacing rules -->
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility"><prop oor:name="NoExternalLeading" oor:op="fuse"><value>true</value></prop></item>
+
+ <!-- Disable printer metrics to match Word screen rendering -->
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility"><prop oor:name="UseOurTabStops" oor:op="fuse"><value>false</value></prop></item>
+
+ <!-- Use Word-compatible line spacing (do not add leading) -->
+ <item oor:path="/org.openoffice.Office.Writer/Compatibility"><prop oor:name="UseLineSpacing" oor:op="fuse"><value>true</value></prop></item>
+
+ <!-- Enable font substitution -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution"><prop oor:name="Replacement" oor:op="fuse"><value>true</value></prop></item>
+
+ <!-- Aptos family → Times New Roman (serif) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font0" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Aptos</value></prop><prop oor:name="SubstFont"><value>Times New Roman</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font1" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Aptos Display</value></prop><prop oor:name="SubstFont"><value>Times New Roman</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font2" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Aptos Narrow</value></prop><prop oor:name="SubstFont"><value>Times New Roman</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+ <!-- Calibri → Helvetica (sans-serif to sans-serif) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font3" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Calibri</value></prop><prop oor:name="SubstFont"><value>Helvetica</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font4" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Calibri Light</value></prop><prop oor:name="SubstFont"><value>Helvetica Neue Light</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+ <!-- Cambria → Times New Roman (serif to serif) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font5" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Cambria</value></prop><prop oor:name="SubstFont"><value>Times New Roman</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+ <!-- Segoe UI → Helvetica Neue (sans-serif to sans-serif) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font6" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Segoe UI</value></prop><prop oor:name="SubstFont"><value>Helvetica Neue</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+ <!-- Consolas → Courier New (monospace to monospace) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font7" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Consolas</value></prop><prop oor:name="SubstFont"><value>Courier New</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+ <!-- Cascadia Code/Mono → Courier New (monospace to monospace) -->
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font8" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Cascadia Code</value></prop><prop oor:name="SubstFont"><value>Courier New</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+ <item oor:path="/org.openoffice.Office.Common/Font/Substitution/FontPairs"><node oor:name="font9" oor:op="fuse"><prop oor:name="ReplaceFont"><value>Cascadia Mono</value></prop><prop oor:name="SubstFont"><value>Courier New</value></prop><prop oor:name="Always"><value>true</value></prop><prop oor:name="OnScreenOnly"><value>false</value></prop></node></item>
+
+</oor:items>
