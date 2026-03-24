@@ -25,24 +25,21 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $pdf->SetAutoPageBreak( true, $marginBottom );
         }
 
+        // Tighten TCPDF's default cell height ratio (default 1.25 adds 25% extra).
+        $pdf->setCellHeightRatio( 1.0 );
+
         $pdf->AddPage();
 
-        // Apply paragraph spacing from Normal style.
-        $customStyles = \PhpOffice\PhpWord\Style::getStyles();
-        $normal = $customStyles['Normal'] ?? null;
-        if ( $normal instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-            $before = $normal->getSpaceBefore();
-            $after  = $normal->getSpaceAfter();
-            if ( is_numeric( $before ) && is_numeric( $after ) ) {
-                $height = $normal->getLineHeight() ?? '';
-                $pdf->setHtmlVSpace( [
-                    'p' => [
-                        [ 'n' => $before, 'h' => $height ],
-                        [ 'n' => $after, 'h' => $height ],
-                    ],
-                ] );
-            }
-        }
+        // Set minimal vertical space for <p> tags.
+        // TCPDF setHtmlVSpace: 'n' = number of lines, 'h' = line height in pt.
+        // We want near-zero spacing between <p> tags since PhpWord handles
+        // paragraph spacing via inline CSS margin-top/margin-bottom.
+        $pdf->setHtmlVSpace( [
+            'p' => [
+                [ 'n' => 0, 'h' => 0 ],
+                [ 'n' => 0, 'h' => 0 ],
+            ],
+        ] );
     }
 
     public function save( string $filename ): void {

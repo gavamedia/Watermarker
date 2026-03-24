@@ -469,8 +469,8 @@ class Watermarker_PDF_Processor {
 
     /**
      * Parse styles.xml to extract the line spacing for each named style
-     * and the document default. Returns:
-     *   [ 'default' => 1.16, 'styles' => [ 'xmsonormal' => 1.0, ... ] ]
+     * and the document default. Maps both styleId and w:name to handle
+     * PhpWord's inconsistent naming (registry uses w:name, elements use styleId).
      */
     private function read_docx_spacing_map( $file_path ) {
         $result = [
@@ -502,17 +502,30 @@ class Watermarker_PDF_Processor {
             }
         }
 
-        // 2. Per-style line spacing.
-        //    Match each <w:style ... w:styleId="xxx"> ... </w:style> block.
-        if ( preg_match_all( '/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>.*?<\/w:style>/s', $styles_xml, $sm, PREG_SET_ORDER ) ) {
-            foreach ( $sm as $style_match ) {
-                $style_id = $style_match[1];
-                $block    = $style_match[0];
+        // 2. Per-style line spacing — map both styleId and w:name.
+        if ( preg_match_all( '/<w:style\b[^>]*>.*?<\/w:style>/s', $styles_xml, $sm ) ) {
+            foreach ( $sm[0] as $block ) {
+                // Extract styleId and w:name.
+                $style_id = null;
+                $style_name = null;
+                if ( preg_match( '/w:styleId="([^"]+)"/', $block, $idm ) ) {
+                    $style_id = $idm[1];
+                }
+                if ( preg_match( '/<w:name\s+w:val="([^"]+)"/', $block, $nm ) ) {
+                    $style_name = $nm[1];
+                }
 
                 // Look for w:spacing with w:line inside this style's pPr.
                 if ( preg_match( '/<w:pPr>.*?<\/w:pPr>/s', $block, $ppr ) ) {
                     if ( preg_match( '/w:line="(\d+)"/', $ppr[0], $slm ) ) {
-                        $result['styles'][ $style_id ] = (int) $slm[1] / 240.0;
+                        $lh = (int) $slm[1] / 240.0;
+                        // Map under both names so lookups work regardless of which key PhpWord uses.
+                        if ( $style_id ) {
+                            $result['styles'][ $style_id ] = $lh;
+                        }
+                        if ( $style_name ) {
+                            $result['styles'][ $style_name ] = $lh;
+                        }
                     }
                 }
             }
@@ -532,7 +545,6 @@ class Watermarker_PDF_Processor {
         // 1. Fix all named styles in the global registry.
         $styles = \PhpOffice\PhpWord\Style::getStyles();
         foreach ( $styles as $name => $style ) {
-            // Determine the correct line height for this style.
             $lh = $styleLineMap[ $name ] ?? $defLineHeight;
 
             if ( $style instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
@@ -550,25 +562,36 @@ class Watermarker_PDF_Processor {
             }
         }
 
-        // 2. Walk all elements and set lineHeight on inline paragraph styles.
+        // 2. Walk all elements and set lineHeight on inline paragraph styles,
+        //    using the element's styleName to look up the correct value.
         foreach ( $phpWord->getSections() as $section ) {
-            $this->fix_phpword_spacing( $section, $defLineHeight );
+            $this->fix_phpword_spacing( $section, $spacing_map );
         }
     }
 
     /**
-     * Recursively walk PhpWord elements and set lineHeight where missing.
+     * Recursively walk PhpWord elements and set lineHeight where missing,
+     * using the spacing map to look up per-style values.
      */
-    private function fix_phpword_spacing( $container, $defLineHeight ) {
+    private function fix_phpword_spacing( $container, $spacing_map ) {
         if ( ! method_exists( $container, 'getElements' ) ) {
             return;
         }
+
+        $defLineHeight = $spacing_map['default'];
+        $styleLineMap  = $spacing_map['styles'];
 
         foreach ( $container->getElements() as $element ) {
             if ( method_exists( $element, 'getParagraphStyle' ) ) {
                 $pStyle = $element->getParagraphStyle();
                 if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
-                    $pStyle->setLineHeight( $defLineHeight );
+                    // Look up the style's line height by its styleName (= styleId from DOCX).
+                    $styleName = $pStyle->getStyleName();
+                    $lh = $defLineHeight;
+                    if ( $styleName && isset( $styleLineMap[ $styleName ] ) ) {
+                        $lh = $styleLineMap[ $styleName ];
+                    }
+                    $pStyle->setLineHeight( $lh );
                 }
             }
 
@@ -578,19 +601,24 @@ class Watermarker_PDF_Processor {
                     try {
                         $pStyle = $fStyle->getParagraph();
                         if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
-                            $pStyle->setLineHeight( $defLineHeight );
+                            $styleName = $pStyle->getStyleName();
+                            $lh = $defLineHeight;
+                            if ( $styleName && isset( $styleLineMap[ $styleName ] ) ) {
+                                $lh = $styleLineMap[ $styleName ];
+                            }
+                            $pStyle->setLineHeight( $lh );
                         }
                     } catch ( \Throwable $e ) {}
                 }
             }
 
             if ( method_exists( $element, 'getElements' ) ) {
-                $this->fix_phpword_spacing( $element, $defLineHeight );
+                $this->fix_phpword_spacing( $element, $spacing_map );
             }
             if ( method_exists( $element, 'getRows' ) ) {
                 foreach ( $element->getRows() as $row ) {
                     foreach ( $row->getCells() as $cell ) {
-                        $this->fix_phpword_spacing( $cell, $defLineHeight );
+                        $this->fix_phpword_spacing( $cell, $spacing_map );
                     }
                 }
             }
