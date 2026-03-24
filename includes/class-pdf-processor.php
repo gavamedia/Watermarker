@@ -45,7 +45,7 @@ class Watermarker_PDF_Processor {
                 // Images are placed directly; no conversion to PDF needed.
                 $content_pdf = null;
             } elseif ( in_array( $ext, self::OFFICE_EXT, true ) ) {
-                $content_pdf   = $this->convert_with_libreoffice( $uploaded_path );
+                $content_pdf   = $this->convert_office_to_pdf( $uploaded_path, $ext );
                 $temp_files[]  = $content_pdf;
             } else {
                 throw new \Exception( "Unsupported file format: .{$ext}" );
@@ -248,7 +248,54 @@ class Watermarker_PDF_Processor {
     }
 
     // ------------------------------------------------------------------
-    // LibreOffice conversion
+    // Office document conversion
+    // ------------------------------------------------------------------
+
+    /** Extensions that PhpWord can handle natively (no shell needed). */
+    private const PHPWORD_EXT = [ 'docx', 'rtf', 'html', 'htm' ];
+
+    private function convert_office_to_pdf( $file_path, $ext ) {
+        // Try PHP-native conversion first for supported formats.
+        if ( in_array( $ext, self::PHPWORD_EXT, true ) ) {
+            return $this->convert_with_phpword( $file_path, $ext );
+        }
+
+        // Fall back to LibreOffice for everything else.
+        return $this->convert_with_libreoffice( $file_path );
+    }
+
+    private function convert_with_phpword( $file_path, $ext ) {
+        $reader_map = [
+            'docx' => 'Word2007',
+            'rtf'  => 'RTF',
+            'html' => 'HTML',
+            'htm'  => 'HTML',
+        ];
+
+        $reader_name = $reader_map[ $ext ] ?? null;
+        if ( ! $reader_name ) {
+            throw new \Exception( "No PHP-native reader for .{$ext} files." );
+        }
+
+        $phpWord = \PhpOffice\PhpWord\IOFactory::createReader( $reader_name )->load( $file_path );
+
+        $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
+
+        \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_DOMPDF );
+        \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/dompdf/dompdf' );
+
+        $writer = \PhpOffice\PhpWord\IOFactory::createWriter( $phpWord, 'PDF' );
+        $writer->save( $output );
+
+        if ( ! file_exists( $output ) || filesize( $output ) === 0 ) {
+            throw new \Exception( 'PHP-native DOCX to PDF conversion failed.' );
+        }
+
+        return $output;
+    }
+
+    // ------------------------------------------------------------------
+    // LibreOffice conversion (fallback for xls, ppt, odt, etc.)
     // ------------------------------------------------------------------
 
     private function convert_with_libreoffice( $file_path ) {
