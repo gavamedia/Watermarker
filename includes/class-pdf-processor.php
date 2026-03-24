@@ -352,31 +352,15 @@ class Watermarker_PDF_Processor {
                 if ( $count > 0 ) { $modified = true; }
             }
 
-            // --- Force single line spacing everywhere ---
-            // Replace ALL w:line="NNN" with w:line="240" (single spacing).
-            $xml = preg_replace( '/w:line="(\d+)"/', 'w:line="240"', $xml, -1, $count );
-            if ( $count > 0 ) { $modified = true; }
-
-            // Force all lineRule to "auto" (unless exact/atLeast for fixed-height rows etc).
-            $xml = preg_replace( '/w:lineRule="auto"/', 'w:lineRule="auto"', $xml );
-
-            // Remove autospacing — LibreOffice inflates these massively.
+            // Remove autospacing attributes — PhpWord and LibreOffice both
+            // interpret these very differently from Word. The paragraph-level
+            // before/after values should be used as-is instead.
             $xml = preg_replace( '/\s*w:beforeAutospacing="[^"]*"/', '', $xml, -1, $count );
             if ( $count > 0 ) { $modified = true; }
             $xml = preg_replace( '/\s*w:afterAutospacing="[^"]*"/', '', $xml, -1, $count );
             if ( $count > 0 ) { $modified = true; }
 
-            // Cap w:before and w:after paragraph spacing at 200 twips (10pt).
-            $xml = preg_replace_callback( '/w:before="(\d+)"/', function ( $a ) {
-                return 'w:before="' . min( (int) $a[1], 200 ) . '"';
-            }, $xml, -1, $count );
-            if ( $count > 0 ) { $modified = true; }
-            $xml = preg_replace_callback( '/w:after="(\d+)"/', function ( $a ) {
-                return 'w:after="' . min( (int) $a[1], 200 ) . '"';
-            }, $xml, -1, $count );
-            if ( $count > 0 ) { $modified = true; }
-
-            // Remove contextualSpacing — another LibreOffice/Word disagreement.
+            // Remove contextualSpacing — LibreOffice/PhpWord disagree with Word.
             $xml = preg_replace( '/<w:contextualSpacing[^\/]*\/>/', '', $xml, -1, $count );
             if ( $count > 0 ) { $modified = true; }
             $xml = preg_replace( '/<w:contextualSpacing[^>]*>[^<]*<\/w:contextualSpacing>/', '', $xml, -1, $count );
@@ -392,41 +376,88 @@ class Watermarker_PDF_Processor {
     }
 
     /**
-     * Fix all named paragraph styles in PhpWord's global style registry,
-     * then walk all elements to fix inline styles and string references.
+     * Read the document default line spacing from the DOCX XML so we can
+     * apply it in PhpWord (which doesn't read w:line from DOCX at all).
      */
-    private function fix_phpword_all_spacing( $phpWord ) {
+    private function read_docx_default_spacing( $file_path ) {
+        $defaults = [
+            'lineHeight' => 1.15,  // Word's default (278/240 ≈ 1.16)
+            'after'      => 160,   // Word's default: 8pt = 160 twips
+            'before'     => 0,
+        ];
+
+        $ext = strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) );
+        if ( 'docx' !== $ext ) {
+            return $defaults;
+        }
+
+        $zip = new \ZipArchive();
+        if ( $zip->open( $file_path, \ZipArchive::RDONLY ) !== true ) {
+            return $defaults;
+        }
+
+        $styles_xml = $zip->getFromName( 'word/styles.xml' );
+        $zip->close();
+
+        if ( false === $styles_xml ) {
+            return $defaults;
+        }
+
+        // Read pPrDefault spacing: <w:spacing w:after="160" w:line="278" w:lineRule="auto"/>
+        if ( preg_match( '/<w:pPrDefault>\s*<w:pPr>\s*<w:spacing([^\/]*)\/>/', $styles_xml, $m ) ) {
+            $attrs = $m[1];
+            if ( preg_match( '/w:line="(\d+)"/', $attrs, $lm ) ) {
+                $defaults['lineHeight'] = (int) $lm[1] / 240.0; // Convert twips to multiplier.
+            }
+            if ( preg_match( '/w:after="(\d+)"/', $attrs, $am ) ) {
+                $defaults['after'] = (int) $am[1];
+            }
+            if ( preg_match( '/w:before="(\d+)"/', $attrs, $bm ) ) {
+                $defaults['before'] = (int) $bm[1];
+            }
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * Fix PhpWord spacing: set lineHeight on all styles (PhpWord doesn't read
+     * w:line from DOCX), and respect the paragraph-level overrides.
+     */
+    private function fix_phpword_all_spacing( $phpWord, $defaults ) {
+        $defLineHeight = $defaults['lineHeight'];
+
         // 1. Fix all named styles in the global registry.
+        //    Set lineHeight since PhpWord never reads w:line from DOCX.
         $styles = \PhpOffice\PhpWord\Style::getStyles();
         foreach ( $styles as $name => $style ) {
             if ( $style instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                $style->setLineHeight( 1.0 );
-                $style->setSpaceBefore( 0 );
-                $style->setSpaceAfter( 0 );
+                // Only set lineHeight if not already set (PhpWord leaves it null).
+                if ( null === $style->getLineHeight() ) {
+                    $style->setLineHeight( $defLineHeight );
+                }
             }
-            // Font styles can also carry paragraph info.
             if ( $style instanceof \PhpOffice\PhpWord\Style\Font ) {
                 try {
                     $pStyle = $style->getParagraph();
-                    if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                        $pStyle->setLineHeight( 1.0 );
-                        $pStyle->setSpaceBefore( 0 );
-                        $pStyle->setSpaceAfter( 0 );
+                    if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
+                        $pStyle->setLineHeight( $defLineHeight );
                     }
                 } catch ( \Throwable $e ) {}
             }
         }
 
-        // 2. Walk all sections/elements and fix inline paragraph styles.
+        // 2. Walk all sections/elements and set lineHeight on inline styles.
         foreach ( $phpWord->getSections() as $section ) {
-            $this->fix_phpword_spacing( $section );
+            $this->fix_phpword_spacing( $section, $defLineHeight );
         }
     }
 
     /**
-     * Recursively walk PhpWord elements and force single line spacing.
+     * Recursively walk PhpWord elements and set lineHeight where missing.
+     * Preserves spaceBefore/spaceAfter as read from the document.
      */
-    private function fix_phpword_spacing( $container ) {
+    private function fix_phpword_spacing( $container, $defLineHeight ) {
         if ( ! method_exists( $container, 'getElements' ) ) {
             return;
         }
@@ -435,23 +466,19 @@ class Watermarker_PDF_Processor {
             if ( method_exists( $element, 'getParagraphStyle' ) ) {
                 $pStyle = $element->getParagraphStyle();
                 if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                    $pStyle->setLineHeight( 1.0 );
-                    $pStyle->setSpaceBefore( 0 );
-                    $pStyle->setSpaceAfter( 0 );
+                    if ( null === $pStyle->getLineHeight() ) {
+                        $pStyle->setLineHeight( $defLineHeight );
+                    }
                 }
-                // String reference — the named style was already fixed above.
             }
 
-            // Also fix font-level paragraph styles.
             if ( method_exists( $element, 'getFontStyle' ) ) {
                 $fStyle = $element->getFontStyle();
                 if ( $fStyle instanceof \PhpOffice\PhpWord\Style\Font ) {
                     try {
                         $pStyle = $fStyle->getParagraph();
-                        if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph ) {
-                            $pStyle->setLineHeight( 1.0 );
-                            $pStyle->setSpaceBefore( 0 );
-                            $pStyle->setSpaceAfter( 0 );
+                        if ( $pStyle instanceof \PhpOffice\PhpWord\Style\Paragraph && null === $pStyle->getLineHeight() ) {
+                            $pStyle->setLineHeight( $defLineHeight );
                         }
                     } catch ( \Throwable $e ) {}
                 }
@@ -459,12 +486,12 @@ class Watermarker_PDF_Processor {
 
             // Recurse into containers (tables, cells, headers, footers, textboxes).
             if ( method_exists( $element, 'getElements' ) ) {
-                $this->fix_phpword_spacing( $element );
+                $this->fix_phpword_spacing( $element, $defLineHeight );
             }
             if ( method_exists( $element, 'getRows' ) ) {
                 foreach ( $element->getRows() as $row ) {
                     foreach ( $row->getCells() as $cell ) {
-                        $this->fix_phpword_spacing( $cell );
+                        $this->fix_phpword_spacing( $cell, $defLineHeight );
                     }
                 }
             }
@@ -484,10 +511,13 @@ class Watermarker_PDF_Processor {
             throw new \Exception( "No PHP-native reader for .{$ext} files." );
         }
 
+        // Read actual spacing defaults from the DOCX before PhpWord loads it.
+        $spacing_defaults = $this->read_docx_default_spacing( $file_path );
+
         $phpWord = \PhpOffice\PhpWord\IOFactory::createReader( $reader_name )->load( $file_path );
 
-        // Force single line spacing on all styles and paragraphs.
-        $this->fix_phpword_all_spacing( $phpWord );
+        // Apply line height (PhpWord doesn't read w:line from DOCX).
+        $this->fix_phpword_all_spacing( $phpWord, $spacing_defaults );
 
         $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
 
