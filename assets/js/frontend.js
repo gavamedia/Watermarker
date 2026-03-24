@@ -171,7 +171,7 @@
         if (downloadBtn) {
             downloadBtn.href = data.download_url;
             downloadBtn.setAttribute('download', data.filename || 'document.pdf');
-            downloadBtn.textContent = 'Download ' + (data.filename || 'PDF');
+            downloadBtn.textContent = 'Download Now';
         }
         setDone(true);
     }
