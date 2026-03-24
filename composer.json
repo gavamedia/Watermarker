@@ -1,0 +1,13 @@
+{
+    "name": "watermarker/watermarker",
+    "description": "WordPress plugin to combine uploaded documents with a letterhead template.",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4",
+        "setasign/fpdf": "^1.8",
+        "setasign/fpdi": "^2.6"
+    },
+    "autoload": {
+        "classmap": ["includes/"]
+    }
+}
