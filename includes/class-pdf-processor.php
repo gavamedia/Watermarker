@@ -251,17 +251,134 @@ class Watermarker_PDF_Processor {
     // Office document conversion
     // ------------------------------------------------------------------
 
-    /** Extensions that PhpWord can handle natively (no shell needed). */
+    /** Extensions that PhpWord can handle as a last resort (no shell needed). */
     private const PHPWORD_EXT = [ 'docx', 'rtf', 'html', 'htm' ];
 
+    /** Font substitution map: Microsoft font → macOS-available font. */
+    private const FONT_MAP = [
+        'Aptos'            => 'Times New Roman',
+        'Aptos Display'    => 'Times New Roman',
+        'Aptos Narrow'     => 'Times New Roman',
+        'Calibri'          => 'Helvetica',
+        'Calibri Light'    => 'Helvetica Neue Light',
+        'Cambria'          => 'Times New Roman',
+        'Segoe UI'         => 'Helvetica Neue',
+        'Consolas'         => 'Courier New',
+        'Cascadia Code'    => 'Courier New',
+        'Cascadia Mono'    => 'Courier New',
+    ];
+
     private function convert_office_to_pdf( $file_path, $ext ) {
-        // Try PHP-native conversion first for supported formats.
-        if ( in_array( $ext, self::PHPWORD_EXT, true ) ) {
-            return $this->convert_with_phpword( $file_path, $ext );
+        // Pre-process DOCX: fix fonts and spacing directly in the ZIP XML.
+        $preprocessed = null;
+        if ( 'docx' === $ext ) {
+            $preprocessed = $this->preprocess_docx( $file_path );
+            if ( $preprocessed ) {
+                $file_path = $preprocessed;
+            }
         }
 
-        // Fall back to LibreOffice for everything else.
-        return $this->convert_with_libreoffice( $file_path );
+        // Try LibreOffice first (much better quality).
+        $has_shell = self::function_available( 'exec' )
+                  || self::function_available( 'shell_exec' )
+                  || function_exists( 'proc_open' );
+
+        if ( $has_shell && self::find_libreoffice() ) {
+            try {
+                $result = $this->convert_with_libreoffice( $file_path );
+                if ( $preprocessed ) { @unlink( $preprocessed ); }
+                return $result;
+            } catch ( \Exception $e ) {
+                // Fall through to PhpWord.
+            }
+        }
+
+        // Fall back to PhpWord for supported formats.
+        if ( in_array( $ext, self::PHPWORD_EXT, true ) ) {
+            $result = $this->convert_with_phpword( $file_path, $ext );
+            if ( $preprocessed ) { @unlink( $preprocessed ); }
+            return $result;
+        }
+
+        if ( $preprocessed ) { @unlink( $preprocessed ); }
+        throw new \Exception(
+            'LibreOffice is required to convert this file type but is not available. '
+            . 'Please upload a PDF instead.'
+        );
+    }
+
+    /**
+     * Pre-process a DOCX file: replace Microsoft fonts and normalize paragraph spacing.
+     * DOCX is a ZIP archive — we modify the XML inside directly.
+     *
+     * @return string|null Path to the modified DOCX temp file, or null on failure.
+     */
+    private function preprocess_docx( $file_path ) {
+        $tmp = tempnam( sys_get_temp_dir(), 'wm_docx_' ) . '.docx';
+        if ( ! copy( $file_path, $tmp ) ) {
+            return null;
+        }
+
+        $zip = new \ZipArchive();
+        if ( $zip->open( $tmp ) !== true ) {
+            @unlink( $tmp );
+            return null;
+        }
+
+        // Files inside the DOCX that contain font names and spacing.
+        $xml_files = [ 'word/document.xml', 'word/styles.xml', 'word/header1.xml', 'word/header2.xml', 'word/header3.xml', 'word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml' ];
+
+        foreach ( $xml_files as $name ) {
+            $xml = $zip->getFromName( $name );
+            if ( false === $xml ) {
+                continue;
+            }
+
+            // Replace font names.
+            foreach ( self::FONT_MAP as $from => $to ) {
+                $xml = str_ireplace(
+                    [ 'w:ascii="' . $from . '"', 'w:hAnsi="' . $from . '"', 'w:cs="' . $from . '"', 'w:eastAsia="' . $from . '"', 'val="' . $from . '"' ],
+                    [ 'w:ascii="' . $to . '"',   'w:hAnsi="' . $to . '"',   'w:cs="' . $to . '"',   'w:eastAsia="' . $to . '"',   'val="' . $to . '"' ],
+                    $xml
+                );
+            }
+
+            // Normalize paragraph spacing: reduce excessive before/after spacing.
+            // Match <w:spacing w:before="X" w:after="Y" w:line="Z" .../>
+            // Cap before/after at 120 twips (~2pt) and ensure line spacing isn't excessive.
+            $xml = preg_replace_callback(
+                '/<w:spacing([^\/]*)\/>/',
+                function ( $m ) {
+                    $attrs = $m[1];
+
+                    // Cap w:before and w:after (in twips, 1pt = 20 twips).
+                    // Word default for Aptos is often before="0" after="160" (8pt).
+                    // LibreOffice sometimes inflates these. Cap at 200 twips (10pt).
+                    $attrs = preg_replace_callback( '/w:before="(\d+)"/', function ( $a ) {
+                        return 'w:before="' . min( (int) $a[1], 200 ) . '"';
+                    }, $attrs );
+                    $attrs = preg_replace_callback( '/w:after="(\d+)"/', function ( $a ) {
+                        return 'w:after="' . min( (int) $a[1], 200 ) . '"';
+                    }, $attrs );
+
+                    // If line spacing rule is "auto" and value > 276 (1.15 line), cap at 276.
+                    // 240 = single, 276 = 1.15x, 360 = 1.5x, 480 = double.
+                    if ( preg_match( '/w:lineRule="auto"/', $attrs ) ) {
+                        $attrs = preg_replace_callback( '/w:line="(\d+)"/', function ( $a ) {
+                            return 'w:line="' . min( (int) $a[1], 276 ) . '"';
+                        }, $attrs );
+                    }
+
+                    return '<w:spacing' . $attrs . '/>';
+                },
+                $xml
+            );
+
+            $zip->addFromString( $name, $xml );
+        }
+
+        $zip->close();
+        return $tmp;
     }
 
     private function convert_with_phpword( $file_path, $ext ) {
@@ -307,35 +424,13 @@ class Watermarker_PDF_Processor {
             );
         }
 
-        $out_dir  = sys_get_temp_dir();
-        $profile  = WATERMARKER_PLUGIN_DIR . 'assets/libreoffice-profile';
-        $ext      = strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) );
-        $is_word  = in_array( $ext, [ 'doc', 'docx', 'rtf', 'odt' ], true );
-
-        // Copy the input file to a temp location so the macro can write the PDF next to it.
-        $tmp_input = $out_dir . '/' . basename( $file_path );
-        if ( realpath( $file_path ) !== realpath( $tmp_input ) ) {
-            copy( $file_path, $tmp_input );
-        }
-
-        if ( $is_word ) {
-            // Use macro for Word docs: replaces fonts and exports to PDF.
-            $cmd = sprintf(
-                '%s --headless --norestore "-env:UserInstallation=file://%s" --invisible "macro:///Standard.ConvertToPDF.ConvertToPDF" %s 2>&1',
-                escapeshellarg( $lo ),
-                $profile,
-                escapeshellarg( $tmp_input )
-            );
-        } else {
-            // Simple conversion for non-Word files.
-            $cmd = sprintf(
-                '%s --headless --norestore "-env:UserInstallation=file://%s" --convert-to pdf --outdir %s %s 2>&1',
-                escapeshellarg( $lo ),
-                $profile,
-                escapeshellarg( $out_dir ),
-                escapeshellarg( $file_path )
-            );
-        }
+        $out_dir = sys_get_temp_dir();
+        $cmd     = sprintf(
+            '%s --headless --norestore --convert-to pdf --outdir %s %s 2>&1',
+            escapeshellarg( $lo ),
+            escapeshellarg( $out_dir ),
+            escapeshellarg( $file_path )
+        );
 
         $code   = 1;
         $output = [];
@@ -361,13 +456,7 @@ class Watermarker_PDF_Processor {
 
         $pdf_path = $out_dir . '/' . pathinfo( $file_path, PATHINFO_FILENAME ) . '.pdf';
         if ( ! file_exists( $pdf_path ) ) {
-            // Macro-based conversion may have non-zero exit but still produced the file.
-            throw new \Exception( 'Conversion failed: ' . implode( "\n", $output ) );
-        }
-
-        // Clean up temp input copy.
-        if ( realpath( $file_path ) !== realpath( $tmp_input ) ) {
-            @unlink( $tmp_input );
+            throw new \Exception( 'LibreOffice conversion failed: ' . implode( "\n", $output ) );
         }
 
         return $pdf_path;
