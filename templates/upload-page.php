@@ -23,15 +23,37 @@ if ( ! defined( 'ABSPATH' ) ) {
     <header class="wm-header">
         <?php
         $logo_url = '';
-        // Try custom logo.
+
+        // 1. Standard custom logo (Customizer > Site Identity).
         $custom_logo_id = get_theme_mod( 'custom_logo' );
         if ( $custom_logo_id ) {
             $logo_url = wp_get_attachment_image_url( $custom_logo_id, 'medium' );
         }
-        // Fall back to site icon.
+
+        // 2. Block theme site logo.
         if ( ! $logo_url ) {
-            $logo_url = get_site_icon_url();
+            $site_logo_id = get_option( 'site_logo' );
+            if ( $site_logo_id ) {
+                $logo_url = wp_get_attachment_image_url( $site_logo_id, 'medium' );
+            }
         }
+
+        // 3. Yoast SEO company logo.
+        if ( ! $logo_url ) {
+            $wpseo = get_option( 'wpseo_titles' );
+            if ( ! empty( $wpseo['company_logo_id'] ) ) {
+                $logo_url = wp_get_attachment_image_url( $wpseo['company_logo_id'], 'medium' );
+            }
+            if ( ! $logo_url && ! empty( $wpseo['company_logo'] ) ) {
+                $logo_url = $wpseo['company_logo'];
+            }
+        }
+
+        // 4. Site icon (favicon).
+        if ( ! $logo_url ) {
+            $logo_url = get_site_icon_url( 512 );
+        }
+
         if ( $logo_url ) : ?>
             <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" class="wm-logo">
         <?php endif;
