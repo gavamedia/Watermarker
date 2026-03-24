@@ -44,6 +44,14 @@ class Watermarker_Admin_Settings {
             'sanitize_callback' => 'absint',
             'default'           => 1,
         ] );
+        register_setting( 'watermarker_settings', 'watermarker_show_logo', [
+            'sanitize_callback' => 'absint',
+            'default'           => 1,
+        ] );
+        register_setting( 'watermarker_settings', 'watermarker_show_site_name', [
+            'sanitize_callback' => 'absint',
+            'default'           => 1,
+        ] );
     }
 
     public function sanitize_slug( $value ) {
@@ -76,6 +84,8 @@ class Watermarker_Admin_Settings {
         $slug           = get_option( 'watermarker_url_slug', 'letterhead' );
         $letterhead_id  = get_option( 'watermarker_letterhead_id', '' );
         $apply_all      = get_option( 'watermarker_apply_all_pages', '1' );
+        $show_logo      = get_option( 'watermarker_show_logo', '1' );
+        $show_site_name = get_option( 'watermarker_show_site_name', '1' );
         $has_letterhead = ! empty( $letterhead_id );
         $filename       = $has_letterhead ? basename( (string) get_attached_file( $letterhead_id ) ) : '';
         ?>
@@ -147,6 +157,25 @@ class Watermarker_Admin_Settings {
                             <p class="description">
                                 When a multi-page document is uploaded, choose whether the letterhead appears on every page or just the first.
                             </p>
+                        </td>
+                    </tr>
+
+                    <!-- Upload Page Display -->
+                    <tr>
+                        <th scope="row">Upload Page Display</th>
+                        <td>
+                            <fieldset>
+                                <label>
+                                    <input type="checkbox" name="watermarker_show_logo" value="1"
+                                        <?php checked( $show_logo, '1' ); ?>>
+                                    Show logo
+                                </label><br>
+                                <label>
+                                    <input type="checkbox" name="watermarker_show_site_name" value="1"
+                                        <?php checked( $show_site_name, '1' ); ?>>
+                                    Show site name
+                                </label>
+                            </fieldset>
                         </td>
                     </tr>
                 </table>
