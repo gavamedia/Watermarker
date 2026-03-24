@@ -307,15 +307,35 @@ class Watermarker_PDF_Processor {
             );
         }
 
-        $out_dir = sys_get_temp_dir();
-        $profile = WATERMARKER_PLUGIN_DIR . 'assets/libreoffice-profile';
-        $cmd     = sprintf(
-            '%s --headless -env:UserInstallation=file://%s --infilter="Microsoft Word 2007-2019 XML" --convert-to pdf --outdir %s %s 2>&1',
-            escapeshellarg( $lo ),
-            escapeshellarg( $profile ),
-            escapeshellarg( $out_dir ),
-            escapeshellarg( $file_path )
-        );
+        $out_dir  = sys_get_temp_dir();
+        $profile  = WATERMARKER_PLUGIN_DIR . 'assets/libreoffice-profile';
+        $ext      = strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) );
+        $is_word  = in_array( $ext, [ 'doc', 'docx', 'rtf', 'odt' ], true );
+
+        // Copy the input file to a temp location so the macro can write the PDF next to it.
+        $tmp_input = $out_dir . '/' . basename( $file_path );
+        if ( realpath( $file_path ) !== realpath( $tmp_input ) ) {
+            copy( $file_path, $tmp_input );
+        }
+
+        if ( $is_word ) {
+            // Use macro for Word docs: replaces fonts and exports to PDF.
+            $cmd = sprintf(
+                '%s --headless --norestore "-env:UserInstallation=file://%s" --invisible "macro:///Standard.ConvertToPDF.ConvertToPDF" %s 2>&1',
+                escapeshellarg( $lo ),
+                $profile,
+                escapeshellarg( $tmp_input )
+            );
+        } else {
+            // Simple conversion for non-Word files.
+            $cmd = sprintf(
+                '%s --headless --norestore "-env:UserInstallation=file://%s" --convert-to pdf --outdir %s %s 2>&1',
+                escapeshellarg( $lo ),
+                $profile,
+                escapeshellarg( $out_dir ),
+                escapeshellarg( $file_path )
+            );
+        }
 
         $code   = 1;
         $output = [];
@@ -339,13 +359,15 @@ class Watermarker_PDF_Processor {
             throw new \Exception( 'No shell execution function is available (exec, shell_exec, proc_open). Please ask your host to enable one.' );
         }
 
-        if ( 0 !== $code ) {
-            throw new \Exception( 'LibreOffice conversion failed: ' . implode( "\n", $output ) );
-        }
-
         $pdf_path = $out_dir . '/' . pathinfo( $file_path, PATHINFO_FILENAME ) . '.pdf';
         if ( ! file_exists( $pdf_path ) ) {
-            throw new \Exception( 'Conversion completed but the output PDF was not found.' );
+            // Macro-based conversion may have non-zero exit but still produced the file.
+            throw new \Exception( 'Conversion failed: ' . implode( "\n", $output ) );
+        }
+
+        // Clean up temp input copy.
+        if ( realpath( $file_path ) !== realpath( $tmp_input ) ) {
+            @unlink( $tmp_input );
         }
 
         return $pdf_path;
