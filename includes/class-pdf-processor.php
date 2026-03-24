@@ -281,8 +281,8 @@ class Watermarker_PDF_Processor {
 
         $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
 
-        \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_DOMPDF );
-        \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/dompdf/dompdf' );
+        \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_TCPDF );
+        \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf' );
 
         $writer = \PhpOffice\PhpWord\IOFactory::createWriter( $phpWord, 'PDF' );
         $writer->save( $output );
