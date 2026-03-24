@@ -41,18 +41,16 @@
 
     var dragCounter = 0;
 
-    dropZone.addEventListener('dragenter', function (e) {
+    document.addEventListener('dragenter', function (e) {
         e.preventDefault();
-        e.stopPropagation();
         dragCounter++;
         if (!dropZone.classList.contains('is-processing') && !dropZone.classList.contains('is-done')) {
             setState('is-dragover');
         }
     });
 
-    dropZone.addEventListener('dragleave', function (e) {
+    document.addEventListener('dragleave', function (e) {
         e.preventDefault();
-        e.stopPropagation();
         dragCounter--;
         if (dragCounter <= 0) {
             dragCounter = 0;
@@ -62,14 +60,12 @@
         }
     });
 
-    dropZone.addEventListener('dragover', function (e) {
+    document.addEventListener('dragover', function (e) {
         e.preventDefault();
-        e.stopPropagation();
     });
 
-    dropZone.addEventListener('drop', function (e) {
+    document.addEventListener('drop', function (e) {
         e.preventDefault();
-        e.stopPropagation();
         dragCounter = 0;
 
         if (dropZone.classList.contains('is-processing') || dropZone.classList.contains('is-done')) return;
