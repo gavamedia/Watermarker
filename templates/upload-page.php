@@ -21,6 +21,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 <div class="wm-container">
     <header class="wm-header">
+        <?php
+        $custom_logo_id = get_theme_mod( 'custom_logo' );
+        if ( $custom_logo_id ) :
+            $logo_url = wp_get_attachment_image_url( $custom_logo_id, 'medium' );
+            if ( $logo_url ) : ?>
+                <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" class="wm-logo">
+            <?php endif;
+        endif;
+        ?>
         <h1><?php echo esc_html( $site_name ); ?></h1>
         <p class="wm-subtitle">Upload a document to apply the company letterhead</p>
     </header>
