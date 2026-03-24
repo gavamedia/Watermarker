@@ -494,7 +494,7 @@ class Watermarker_PDF_Processor {
         \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_TCPDF );
         \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf' );
 
-        $writer = \PhpOffice\PhpWord\IOFactory::createWriter( $phpWord, 'PDF' );
+        $writer = new \Watermarker_TCPDF_Writer( $phpWord );
         $writer->save( $output );
 
         if ( ! file_exists( $output ) || filesize( $output ) === 0 ) {

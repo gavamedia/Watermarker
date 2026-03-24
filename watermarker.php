@@ -33,6 +33,7 @@ require_once WATERMARKER_PLUGIN_DIR . 'vendor/autoload.php';
 require_once WATERMARKER_PLUGIN_DIR . 'includes/class-admin-settings.php';
 require_once WATERMARKER_PLUGIN_DIR . 'includes/class-frontend-page.php';
 require_once WATERMARKER_PLUGIN_DIR . 'includes/class-pdf-processor.php';
+require_once WATERMARKER_PLUGIN_DIR . 'includes/class-tcpdf-writer.php';
 
 /**
  * Main plugin class.
