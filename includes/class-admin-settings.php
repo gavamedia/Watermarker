@@ -170,7 +170,11 @@ class Watermarker_Admin_Settings {
                         <td><strong>LibreOffice</strong></td>
                         <td>
                             <?php
-                            $lo = Watermarker_PDF_Processor::find_libreoffice();
+                            try {
+                                $lo = Watermarker_PDF_Processor::find_libreoffice();
+                            } catch ( \Throwable $e ) {
+                                $lo = null;
+                            }
                             echo $lo
                                 ? '<span style="color:green">Found:</span> <code>' . esc_html( $lo ) . '</code>'
                                 : '<span style="color:orange">Not found</span> &mdash; DOCX / Office format conversion will not work. Install LibreOffice on the server to enable it.';

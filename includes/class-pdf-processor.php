@@ -288,11 +288,13 @@ class Watermarker_PDF_Processor {
      * @return string|null Path to the binary, or null if not found.
      */
     public static function find_libreoffice() {
-        // Try the PATH first.
-        foreach ( [ 'libreoffice', 'soffice' ] as $bin ) {
-            $result = trim( (string) @shell_exec( 'which ' . escapeshellarg( $bin ) . ' 2>/dev/null' ) );
-            if ( $result && is_executable( $result ) ) {
-                return $result;
+        // Try the PATH first (skip if shell_exec is disabled).
+        if ( function_exists( 'shell_exec' ) && ! in_array( 'shell_exec', array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true ) ) {
+            foreach ( [ 'libreoffice', 'soffice' ] as $bin ) {
+                $result = trim( (string) @shell_exec( 'which ' . escapeshellarg( $bin ) . ' 2>/dev/null' ) );
+                if ( $result && is_executable( $result ) ) {
+                    return $result;
+                }
             }
         }
 
