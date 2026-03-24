@@ -46,6 +46,8 @@ class Watermarker_PDF_Processor {
                 $content_pdf = null;
             } elseif ( in_array( $ext, self::OFFICE_EXT, true ) ) {
                 $content_pdf   = $this->convert_office_to_pdf( $uploaded_path, $ext );
+                // DEBUG: return raw converted PDF without letterhead overlay.
+                return $content_pdf;
                 $temp_files[]  = $content_pdf;
             } else {
                 throw new \Exception( "Unsupported file format: .{$ext}" );
