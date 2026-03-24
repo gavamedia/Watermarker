@@ -276,6 +276,7 @@ body.watermarker-page {
 #wm-reset-btn {
     font-size: 0.8rem;
     padding: 6px 16px;
+    margin-top: 1em;
 }
 
 /* Responsive */

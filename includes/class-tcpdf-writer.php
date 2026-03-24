@@ -25,9 +25,6 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $pdf->SetAutoPageBreak( true, $marginBottom );
         }
 
-        // Tighten TCPDF's default cell height ratio (default 1.25 adds 25% extra).
-        $pdf->setCellHeightRatio( 1.0 );
-
         $pdf->AddPage();
 
         // Set minimal vertical space for <p> tags.
@@ -77,7 +74,24 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         $pdf->setPrintFooter( false );
         $pdf->SetFont( $this->getFont() );
         $this->prepareToWrite( $pdf );
-        $pdf->writeHTML( $this->getContent() );
+
+        // Fix the HTML before TCPDF renders it:
+        // Zero out the p,.Normal CSS margins — content paragraphs already have
+        // inline margins, and TextBreaks (blank lines) should not inherit
+        // Normal's spaceAfter. Preserve the line-height set by our fix.
+        $html = $this->getContent();
+        $normalLH = '';
+        $customStyles = \PhpOffice\PhpWord\Style::getStyles();
+        $normal = $customStyles['Normal'] ?? null;
+        if ( $normal instanceof \PhpOffice\PhpWord\Style\Paragraph && $normal->getLineHeight() ) {
+            $normalLH = ' line-height: ' . $normal->getLineHeight() . ';';
+        }
+        $html = preg_replace(
+            '/p,\s*\.Normal\s*\{[^}]*\}/',
+            'p, .Normal {margin-top: 0; margin-bottom: 0;' . $normalLH . '}',
+            $html
+        );
+        $pdf->writeHTML( $html );
 
         // Document properties.
         $docProps = $phpWord->getDocInfo();
