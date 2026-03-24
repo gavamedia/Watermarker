@@ -268,7 +268,27 @@ class Watermarker_PDF_Processor {
             escapeshellarg( $file_path )
         );
 
-        exec( $cmd, $output, $code );
+        $code   = 1;
+        $output = [];
+
+        if ( self::function_available( 'exec' ) ) {
+            exec( $cmd, $output, $code );
+        } elseif ( self::function_available( 'shell_exec' ) ) {
+            $result = @shell_exec( $cmd );
+            $output = $result ? explode( "\n", $result ) : [];
+            $code   = ( $result !== null && $result !== false ) ? 0 : 1;
+        } elseif ( function_exists( 'proc_open' ) ) {
+            $proc = proc_open( $cmd, [ 1 => [ 'pipe', 'w' ], 2 => [ 'pipe', 'w' ] ], $pipes );
+            if ( is_resource( $proc ) ) {
+                $result = stream_get_contents( $pipes[1] );
+                fclose( $pipes[1] );
+                fclose( $pipes[2] );
+                $code   = proc_close( $proc );
+                $output = explode( "\n", $result );
+            }
+        } else {
+            throw new \Exception( 'No shell execution function is available (exec, shell_exec, proc_open). Please ask your host to enable one.' );
+        }
 
         if ( 0 !== $code ) {
             throw new \Exception( 'LibreOffice conversion failed: ' . implode( "\n", $output ) );
@@ -287,9 +307,13 @@ class Watermarker_PDF_Processor {
      *
      * @return string|null Path to the binary, or null if not found.
      */
+    private static function function_available( $name ) {
+        return function_exists( $name ) && ! in_array( $name, array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true );
+    }
+
     public static function find_libreoffice() {
         // Try the PATH first (skip if shell_exec is disabled).
-        if ( function_exists( 'shell_exec' ) && ! in_array( 'shell_exec', array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true ) ) {
+        if ( self::function_available( 'shell_exec' ) ) {
             foreach ( [ 'libreoffice', 'soffice' ] as $bin ) {
                 $result = trim( (string) @shell_exec( 'which ' . escapeshellarg( $bin ) . ' 2>/dev/null' ) );
                 if ( $result && is_executable( $result ) ) {
