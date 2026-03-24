@@ -308,9 +308,11 @@ class Watermarker_PDF_Processor {
         }
 
         $out_dir = sys_get_temp_dir();
+        $profile = WATERMARKER_PLUGIN_DIR . 'assets/libreoffice-profile';
         $cmd     = sprintf(
-            '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+            '%s --headless -env:UserInstallation=file://%s --infilter="Microsoft Word 2007-2019 XML" --convert-to pdf --outdir %s %s 2>&1',
             escapeshellarg( $lo ),
+            escapeshellarg( $profile ),
             escapeshellarg( $out_dir ),
             escapeshellarg( $file_path )
         );
