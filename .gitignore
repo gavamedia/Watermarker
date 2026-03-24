@@ -13,6 +13,4 @@ node_modules/
 .env
 .env.local
 
-/vendor/
-composer.lock
 composer.phar
