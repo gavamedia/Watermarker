@@ -73,6 +73,10 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         $pdf->setPrintHeader( false );
         $pdf->setPrintFooter( false );
         $pdf->SetFont( $this->getFont() );
+
+        // Register any custom-uploaded fonts before rendering.
+        Watermarker_Font_Manager::register_fonts_with_tcpdf( $pdf );
+
         $this->prepareToWrite( $pdf );
 
         $html = $this->getContent();

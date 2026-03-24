@@ -14,6 +14,8 @@ class Watermarker_Admin_Settings {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
         add_action( 'update_option_watermarker_url_slug', [ $this, 'on_slug_change' ], 10, 2 );
         add_filter( 'plugin_action_links_' . plugin_basename( WATERMARKER_PLUGIN_DIR . 'watermarker.php' ), [ $this, 'add_action_links' ] );
+        add_action( 'wp_ajax_watermarker_upload_font', [ $this, 'ajax_upload_font' ] );
+        add_action( 'wp_ajax_watermarker_delete_font', [ $this, 'ajax_delete_font' ] );
     }
 
     public function add_action_links( $links ) {
@@ -71,6 +73,12 @@ class Watermarker_Admin_Settings {
             WATERMARKER_VERSION,
             true
         );
+        wp_localize_script( 'watermarker-admin', 'watermarkerFonts', [
+            'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+            'nonce'     => wp_create_nonce( 'watermarker_font_action' ),
+            'families'  => Watermarker_Font_Manager::get_font_families(),
+            'installed' => Watermarker_Font_Manager::get_installed_status(),
+        ] );
     }
 
     public function on_slug_change( $old_value, $new_value ) {
@@ -212,7 +220,84 @@ class Watermarker_Admin_Settings {
                     </tr>
                 </tbody>
             </table>
+
+            <hr>
+            <h2>Fonts</h2>
+            <p class="description">Upload Microsoft Office TTF font files for accurate DOCX&#8209;to&#8209;PDF conversion. Only <code>.ttf</code> files are accepted.</p>
+            <?php
+            $font_status = Watermarker_Font_Manager::get_installed_status();
+            $font_families = Watermarker_Font_Manager::get_font_families();
+            ?>
+            <table class="widefat fixed" style="max-width:700px" id="watermarker-fonts-table">
+                <thead>
+                    <tr>
+                        <th>Font Family</th>
+                        <th>Regular</th>
+                        <th>Bold</th>
+                        <th>Italic</th>
+                        <th>Bold Italic</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $font_families as $key => $family ) : ?>
+                    <tr>
+                        <td><strong><?php echo esc_html( $family['label'] ); ?></strong></td>
+                        <?php foreach ( [ 'regular', 'bold', 'italic', 'bolditalic' ] as $variant ) : ?>
+                        <td id="wm-font-<?php echo esc_attr( $key . '-' . $variant ); ?>">
+                            <?php if ( $font_status[ $key ][ $variant ] ) : ?>
+                                <span style="color:green">Installed</span>
+                                <button type="button" class="button-link wm-font-delete" data-family="<?php echo esc_attr( $key ); ?>" data-variant="<?php echo esc_attr( $variant ); ?>" style="color:#b32d2e;margin-left:4px;">Delete</button>
+                            <?php else : ?>
+                                <button type="button" class="button button-small wm-font-upload" data-family="<?php echo esc_attr( $key ); ?>" data-variant="<?php echo esc_attr( $variant ); ?>">Upload</button>
+                                <input type="file" accept=".ttf" style="display:none;">
+                            <?php endif; ?>
+                        </td>
+                        <?php endforeach; ?>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
         <?php
+    }
+
+    public function ajax_upload_font() {
+        check_ajax_referer( 'watermarker_font_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Permission denied.' ] );
+        }
+
+        $family  = sanitize_text_field( $_POST['family'] ?? '' );
+        $variant = sanitize_text_field( $_POST['variant'] ?? '' );
+
+        if ( empty( $_FILES['font_file']['tmp_name'] ) ) {
+            wp_send_json_error( [ 'message' => 'No file uploaded.' ] );
+        }
+
+        $result = Watermarker_Font_Manager::install_font(
+            $_FILES['font_file']['tmp_name'],
+            $family,
+            $variant
+        );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        wp_send_json_success( [ 'message' => 'Font installed successfully.' ] );
+    }
+
+    public function ajax_delete_font() {
+        check_ajax_referer( 'watermarker_font_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Permission denied.' ] );
+        }
+
+        $family  = sanitize_text_field( $_POST['family'] ?? '' );
+        $variant = sanitize_text_field( $_POST['variant'] ?? '' );
+
+        Watermarker_Font_Manager::delete_font( $family, $variant );
+
+        wp_send_json_success( [ 'message' => 'Font removed.' ] );
     }
 }

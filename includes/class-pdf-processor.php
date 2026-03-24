@@ -289,9 +289,18 @@ class Watermarker_PDF_Processor {
         $installed = self::get_installed_fonts();
         self::$resolved_fonts = [];
 
+        // Check which fonts have been uploaded via the Font Manager.
+        $uploaded_labels = class_exists( 'Watermarker_Font_Manager' )
+            ? Watermarker_Font_Manager::get_installed_font_labels()
+            : [];
+
         foreach ( self::FONT_MAP as $original => $fallbacks ) {
-            // If the original font is installed, no substitution needed.
+            // If the original font is installed on the system, no substitution needed.
             if ( isset( $installed[ strtolower( $original ) ] ) ) {
+                continue;
+            }
+            // If the font was uploaded via the Font Manager, no substitution needed.
+            if ( in_array( $original, $uploaded_labels, true ) ) {
                 continue;
             }
             // Find the first available fallback.
