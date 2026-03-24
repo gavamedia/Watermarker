@@ -1,10 +1,11 @@
 <?php
 /**
  * Plugin Name: Watermarker
- * Plugin URI:  https://example.com/watermarker
+ * Plugin URI:  https://gavamedia.com
  * Description: Upload documents and combine them with your letterhead template to create branded PDFs. Supports PDF, DOCX, images, and more.
  * Version:     1.0.0
- * Author:      Watermarker
+ * Author:      GAVAMEDIA
+ * Author URI:  https://gavamedia.com
  * License:     GPL v2 or later
  * Text Domain: watermarker
  */
