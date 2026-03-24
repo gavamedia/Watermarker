@@ -343,17 +343,18 @@ class Watermarker_PDF_Processor {
                 );
             }
 
-            // Normalize paragraph spacing: reduce excessive before/after spacing.
-            // Match <w:spacing w:before="X" w:after="Y" w:line="Z" .../>
-            // Cap before/after at 120 twips (~2pt) and ensure line spacing isn't excessive.
+            // Normalize paragraph spacing for LibreOffice compatibility.
+            // Twip values: 240 = single, 276 = 1.15x, 360 = 1.5x, 480 = double.
             $xml = preg_replace_callback(
-                '/<w:spacing([^\/]*)\/>/',
+                '/<w:spacing([^>]*?)\/?>/',
                 function ( $m ) {
                     $attrs = $m[1];
 
+                    // Remove autospacing — LibreOffice interprets it very differently from Word.
+                    $attrs = preg_replace( '/\s*w:beforeAutospacing="[^"]*"/', '', $attrs );
+                    $attrs = preg_replace( '/\s*w:afterAutospacing="[^"]*"/', '', $attrs );
+
                     // Cap w:before and w:after (in twips, 1pt = 20 twips).
-                    // Word default for Aptos is often before="0" after="160" (8pt).
-                    // LibreOffice sometimes inflates these. Cap at 200 twips (10pt).
                     $attrs = preg_replace_callback( '/w:before="(\d+)"/', function ( $a ) {
                         return 'w:before="' . min( (int) $a[1], 200 ) . '"';
                     }, $attrs );
@@ -361,18 +362,34 @@ class Watermarker_PDF_Processor {
                         return 'w:after="' . min( (int) $a[1], 200 ) . '"';
                     }, $attrs );
 
-                    // If line spacing rule is "auto" and value > 276 (1.15 line), cap at 276.
-                    // 240 = single, 276 = 1.15x, 360 = 1.5x, 480 = double.
-                    if ( preg_match( '/w:lineRule="auto"/', $attrs ) ) {
-                        $attrs = preg_replace_callback( '/w:line="(\d+)"/', function ( $a ) {
-                            return 'w:line="' . min( (int) $a[1], 276 ) . '"';
-                        }, $attrs );
+                    // Force single line spacing (240) for any auto/implied line rule.
+                    // If lineRule is "exact" or "atLeast", leave it alone.
+                    $has_exact   = preg_match( '/w:lineRule="(exact|atLeast)"/', $attrs );
+                    $has_line    = preg_match( '/w:line="(\d+)"/', $attrs, $lm );
+
+                    if ( ! $has_exact && $has_line ) {
+                        // Auto or no lineRule: force single spacing.
+                        $attrs = preg_replace( '/w:line="\d+"/', 'w:line="240"', $attrs );
+                        // Ensure lineRule is set to auto.
+                        if ( ! preg_match( '/w:lineRule=/', $attrs ) ) {
+                            $attrs .= ' w:lineRule="auto"';
+                        } else {
+                            $attrs = preg_replace( '/w:lineRule="[^"]*"/', 'w:lineRule="auto"', $attrs );
+                        }
+                    } elseif ( ! $has_exact && ! $has_line ) {
+                        // No line spacing specified — add explicit single spacing.
+                        $attrs .= ' w:line="240" w:lineRule="auto"';
                     }
 
                     return '<w:spacing' . $attrs . '/>';
                 },
                 $xml
             );
+
+            // Also fix spacing in <w:docDefaults> — the document-level default style
+            // that affects all paragraphs without explicit overrides.
+            // Remove any contextualSpacing that might confuse LibreOffice.
+            $xml = preg_replace( '/<w:contextualSpacing[^\/]*\/>/', '', $xml );
 
             $zip->addFromString( $name, $xml );
         }
