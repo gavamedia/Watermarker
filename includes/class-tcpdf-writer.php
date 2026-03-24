@@ -75,22 +75,17 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         $pdf->SetFont( $this->getFont() );
         $this->prepareToWrite( $pdf );
 
-        // Fix the HTML before TCPDF renders it:
-        // Zero out the p,.Normal CSS margins — content paragraphs already have
-        // inline margins, and TextBreaks (blank lines) should not inherit
-        // Normal's spaceAfter. Preserve the line-height set by our fix.
         $html = $this->getContent();
-        $normalLH = '';
-        $customStyles = \PhpOffice\PhpWord\Style::getStyles();
-        $normal = $customStyles['Normal'] ?? null;
-        if ( $normal instanceof \PhpOffice\PhpWord\Style\Paragraph && $normal->getLineHeight() ) {
-            $normalLH = ' line-height: ' . $normal->getLineHeight() . ';';
-        }
-        $html = preg_replace(
-            '/p,\s*\.Normal\s*\{[^}]*\}/',
-            'p, .Normal {margin-top: 0; margin-bottom: 0;' . $normalLH . '}',
+
+        // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
+        // In the DOCX these have before=0 after=0, but without inline styles
+        // they inherit the p,.Normal rule's margins. Zero them out explicitly.
+        $html = str_replace(
+            '<p>&nbsp;</p>',
+            '<p style="margin:0; padding:0;">&nbsp;</p>',
             $html
         );
+
         $pdf->writeHTML( $html );
 
         // Document properties.
