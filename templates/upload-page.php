@@ -23,14 +23,14 @@ if ( ! defined( 'ABSPATH' ) ) {
     <header class="wm-header">
         <?php
         $logo_url = '';
-        // Try custom logo first.
+        // Try custom logo.
         $custom_logo_id = get_theme_mod( 'custom_logo' );
         if ( $custom_logo_id ) {
             $logo_url = wp_get_attachment_image_url( $custom_logo_id, 'medium' );
         }
         // Fall back to site icon.
         if ( ! $logo_url ) {
-            $logo_url = get_site_icon_url( 512 );
+            $logo_url = get_site_icon_url();
         }
         if ( $logo_url ) : ?>
             <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" class="wm-logo">
