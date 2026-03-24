@@ -19,10 +19,6 @@ jQuery(document).ready(function ($) {
             library: { type: ['application/pdf', 'image'] }
         });
 
-        frame.on('open', function () {
-            frame.content.mode('upload');
-        });
-
         frame.on('select', function () {
             var attachment = frame.state().get('selection').first().toJSON();
             $('#watermarker_letterhead_id').val(attachment.id);
