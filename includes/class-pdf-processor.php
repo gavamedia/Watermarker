@@ -325,73 +325,65 @@ class Watermarker_PDF_Processor {
             return null;
         }
 
-        // Files inside the DOCX that contain font names and spacing.
-        $xml_files = [ 'word/document.xml', 'word/styles.xml', 'word/header1.xml', 'word/header2.xml', 'word/header3.xml', 'word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml' ];
+        // Process ALL xml files in the DOCX, not just a hardcoded list.
+        for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+            $name = $zip->getNameIndex( $i );
+            if ( ! preg_match( '/\.xml$|\.rels$/i', $name ) ) {
+                continue;
+            }
 
-        foreach ( $xml_files as $name ) {
             $xml = $zip->getFromName( $name );
             if ( false === $xml ) {
                 continue;
             }
 
+            $modified = false;
+
             // Replace font names.
             foreach ( self::FONT_MAP as $from => $to ) {
+                $count = 0;
                 $xml = str_ireplace(
                     [ 'w:ascii="' . $from . '"', 'w:hAnsi="' . $from . '"', 'w:cs="' . $from . '"', 'w:eastAsia="' . $from . '"', 'val="' . $from . '"' ],
                     [ 'w:ascii="' . $to . '"',   'w:hAnsi="' . $to . '"',   'w:cs="' . $to . '"',   'w:eastAsia="' . $to . '"',   'val="' . $to . '"' ],
-                    $xml
+                    $xml,
+                    $count
                 );
+                if ( $count > 0 ) { $modified = true; }
             }
 
-            // Normalize paragraph spacing for LibreOffice compatibility.
-            // Twip values: 240 = single, 276 = 1.15x, 360 = 1.5x, 480 = double.
-            $xml = preg_replace_callback(
-                '/<w:spacing([^>]*?)\/?>/',
-                function ( $m ) {
-                    $attrs = $m[1];
+            // --- Force single line spacing everywhere ---
+            // Replace ALL w:line="NNN" with w:line="240" (single spacing).
+            $xml = preg_replace( '/w:line="(\d+)"/', 'w:line="240"', $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
 
-                    // Remove autospacing — LibreOffice interprets it very differently from Word.
-                    $attrs = preg_replace( '/\s*w:beforeAutospacing="[^"]*"/', '', $attrs );
-                    $attrs = preg_replace( '/\s*w:afterAutospacing="[^"]*"/', '', $attrs );
+            // Force all lineRule to "auto" (unless exact/atLeast for fixed-height rows etc).
+            $xml = preg_replace( '/w:lineRule="auto"/', 'w:lineRule="auto"', $xml );
 
-                    // Cap w:before and w:after (in twips, 1pt = 20 twips).
-                    $attrs = preg_replace_callback( '/w:before="(\d+)"/', function ( $a ) {
-                        return 'w:before="' . min( (int) $a[1], 200 ) . '"';
-                    }, $attrs );
-                    $attrs = preg_replace_callback( '/w:after="(\d+)"/', function ( $a ) {
-                        return 'w:after="' . min( (int) $a[1], 200 ) . '"';
-                    }, $attrs );
+            // Remove autospacing — LibreOffice inflates these massively.
+            $xml = preg_replace( '/\s*w:beforeAutospacing="[^"]*"/', '', $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
+            $xml = preg_replace( '/\s*w:afterAutospacing="[^"]*"/', '', $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
 
-                    // Force single line spacing (240) for any auto/implied line rule.
-                    // If lineRule is "exact" or "atLeast", leave it alone.
-                    $has_exact   = preg_match( '/w:lineRule="(exact|atLeast)"/', $attrs );
-                    $has_line    = preg_match( '/w:line="(\d+)"/', $attrs, $lm );
+            // Cap w:before and w:after paragraph spacing at 200 twips (10pt).
+            $xml = preg_replace_callback( '/w:before="(\d+)"/', function ( $a ) {
+                return 'w:before="' . min( (int) $a[1], 200 ) . '"';
+            }, $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
+            $xml = preg_replace_callback( '/w:after="(\d+)"/', function ( $a ) {
+                return 'w:after="' . min( (int) $a[1], 200 ) . '"';
+            }, $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
 
-                    if ( ! $has_exact && $has_line ) {
-                        // Auto or no lineRule: force single spacing.
-                        $attrs = preg_replace( '/w:line="\d+"/', 'w:line="240"', $attrs );
-                        // Ensure lineRule is set to auto.
-                        if ( ! preg_match( '/w:lineRule=/', $attrs ) ) {
-                            $attrs .= ' w:lineRule="auto"';
-                        } else {
-                            $attrs = preg_replace( '/w:lineRule="[^"]*"/', 'w:lineRule="auto"', $attrs );
-                        }
-                    } elseif ( ! $has_exact && ! $has_line ) {
-                        // No line spacing specified — add explicit single spacing.
-                        $attrs .= ' w:line="240" w:lineRule="auto"';
-                    }
+            // Remove contextualSpacing — another LibreOffice/Word disagreement.
+            $xml = preg_replace( '/<w:contextualSpacing[^\/]*\/>/', '', $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
+            $xml = preg_replace( '/<w:contextualSpacing[^>]*>[^<]*<\/w:contextualSpacing>/', '', $xml, -1, $count );
+            if ( $count > 0 ) { $modified = true; }
 
-                    return '<w:spacing' . $attrs . '/>';
-                },
-                $xml
-            );
-
-            // Also fix spacing in <w:docDefaults> — the document-level default style
-            // that affects all paragraphs without explicit overrides.
-            // Remove any contextualSpacing that might confuse LibreOffice.
-            $xml = preg_replace( '/<w:contextualSpacing[^\/]*\/>/', '', $xml );
-
-            $zip->addFromString( $name, $xml );
+            if ( $modified ) {
+                $zip->addFromString( $name, $xml );
+            }
         }
 
         $zip->close();
