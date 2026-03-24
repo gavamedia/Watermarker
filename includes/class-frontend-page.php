@@ -156,7 +156,7 @@ class Watermarker_Frontend_Page {
 
             wp_send_json_success( [
                 'message'      => 'Document processed successfully!',
-                'download_url' => admin_url( 'admin-ajax.php' ) . '?action=watermarker_download&key=' . rawurlencode( $key ),
+                'download_url' => admin_url( 'admin-ajax.php' ) . '?action=watermarker_download&key=' . rawurlencode( $key ) . '&t=' . time(),
                 'filename'     => $out_name,
             ] );
         } catch ( \Exception $e ) {
