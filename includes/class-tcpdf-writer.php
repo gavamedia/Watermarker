@@ -91,8 +91,17 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $defaultMarginBottom = trim( $mb[1] );
         }
 
+        // Detect the most common content font-size from span styles.
+        // TextBreaks lose their font info in PhpWord, so we use this to size them.
+        $contentFontSize = '10pt';
+        if ( preg_match_all( '/font-size:\s*(\d+(?:\.\d+)?pt)/', $html, $fsm ) ) {
+            $counts = array_count_values( $fsm[1] );
+            arsort( $counts );
+            $contentFontSize = key( $counts );
+        }
+
         // Zero out the p,.Normal CSS rule — styled paragraphs have inline margins,
-        // and we'll handle unstyled paragraphs and TextBreaks explicitly.
+        // and we'll handle unstyled paragraphs and TextBreaks explicitly below.
         $html = preg_replace(
             '/p,\s*\.Normal\s*\{[^}]*\}/',
             'p, .Normal {margin-top: 0; margin-bottom: 0;}',
@@ -100,10 +109,11 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         );
 
         // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
-        // In the DOCX these have before=0 after=0, so zero margins + line-height.
+        // PhpWord strips their font size. Use the document's most common content
+        // font size so they match the surrounding text height.
         $html = str_replace(
             '<p>&nbsp;</p>',
-            '<p style="margin:0; padding:0; line-height: 1.15;">&nbsp;</p>',
+            '<p style="margin:0; padding:0; font-size: ' . $contentFontSize . '; line-height: 1.15;">&nbsp;</p>',
             $html
         );
 
