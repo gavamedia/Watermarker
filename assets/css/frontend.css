@@ -80,6 +80,7 @@ body.watermarker-page {
     transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
     position: relative;
     cursor: pointer;
+    margin-top: 32px;
 }
 
 .wm-upload-area:hover {
