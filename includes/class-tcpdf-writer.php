@@ -25,9 +25,11 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $pdf->SetAutoPageBreak( true, $marginBottom );
         }
 
-        // Set TCPDF's cell height ratio to match Word's single-spacing
-        // for Western fonts (~1.15× font size). This is used as the base
-        // line height and also affects margin/padding rendering.
+        // Set TCPDF's cell height ratio — the base multiplier for all
+        // cell/line heights in TCPDF. We keep this at 1.15 (not higher)
+        // because TextBreak and spacer paragraphs rely on it being modest.
+        // Content line-height is controlled separately via CSS line-height
+        // boost (1 → 1.165) to match Word's font-metric-based spacing.
         $pdf->setCellHeightRatio( 1.15 );
 
         $pdf->AddPage();
@@ -127,8 +129,8 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         // Unstyled content paragraphs only have inline line-height, no margins.
         // TCPDF ignores CSS margin-bottom on <p> when setHtmlVSpace is zeroed,
         // so we insert a spacer <p> after each to simulate the document default
-        // spaceAfter. Use font-size to control spacer height (TCPDF multiplies
-        // by cellHeightRatio, so 6pt * 1.15 ≈ 7pt gap, close to Word's 8pt).
+        // spaceAfter (160 twips = 8pt). Use font-size to control spacer height
+        // (TCPDF multiplies by cellHeightRatio, so 7pt * 1.15 ≈ 8pt gap).
         $html = preg_replace(
             '/<p style="line-height: ([^"]+);">/',
             '<p class="unstyled-para" style="margin-top: 0; margin-bottom: 0; line-height: $1;">',
@@ -136,7 +138,7 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         );
         $html = preg_replace(
             '/(<p class="unstyled-para"[^>]*>.*?<\/p>)\n/s',
-            '$1' . "\n" . '<p style="margin:0; padding:0; font-size: 6pt; line-height: 0.5;">&nbsp;</p>' . "\n",
+            '$1' . "\n" . '<p style="margin:0; padding:0; font-size: 7pt; line-height: 0.5;">&nbsp;</p>' . "\n",
             $html
         );
 
@@ -145,12 +147,14 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         $html = $this->convert_vertical_align_to_tags( $html );
 
         // Boost line-height: 1 (DOCX single-spacing w:line="240") to match
-        // Word's actual rendering. Word's "single" line spacing is ~1.15×
-        // the font size, but TCPDF interprets line-height: 1 as exactly 1×.
-        // We adjust styled paragraphs to 1.15 to close the gap.
+        // Word's actual rendering. Word's "single" line spacing uses font
+        // metrics (usWinAscent+usWinDescent), yielding ~1.165× effective
+        // line height for Helvetica (our substitute for Aptos). TCPDF
+        // interprets line-height: 1 as exactly 1×, so we boost styled
+        // paragraphs to 1.165: max(cellHeightRatio=1.15, 1.165) × fontSize.
         $html = preg_replace(
             '/line-height:\s*1;/',
-            'line-height: 1.15;',
+            'line-height: 1.165;',
             $html
         );
 
