@@ -63,18 +63,28 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $w     = $style->getPageSizeW(); // twips
             $h     = $style->getPageSizeH(); // twips
 
-            // Detect paper size from dimensions.
-            // Letter: 12240 x 15840 twips, A4: 11906 x 16838 twips.
-            if ( abs( $w - 12240 ) < 100 && abs( $h - 15840 ) < 100 ) {
-                $paperSize = 'LETTER';
-            } elseif ( abs( $w - 15840 ) < 100 && abs( $h - 12240 ) < 100 ) {
-                $paperSize   = 'LETTER';
+            // Ensure $w is the shorter dimension for size matching.
+            $short = min( $w, $h );
+            $long  = max( $w, $h );
+            if ( $w > $h ) {
                 $orientation = 'L';
-            } elseif ( abs( $w - 16838 ) < 100 && abs( $h - 11906 ) < 100 ) {
-                $paperSize   = 'A4';
-                $orientation = 'L';
-            } else {
-                $paperSize = 'A4';
+            }
+
+            // Known paper sizes in twips (width × height, portrait).
+            $sizes = [
+                'LETTER' => [ 12240, 15840 ],
+                'LEGAL'  => [ 12240, 20160 ],
+                'A3'     => [ 16838, 23811 ],
+                'A4'     => [ 11906, 16838 ],
+                'A5'     => [  8391, 11906 ],
+            ];
+
+            $paperSize = 'LETTER'; // Default.
+            foreach ( $sizes as $name => $dims ) {
+                if ( abs( $short - $dims[0] ) < 100 && abs( $long - $dims[1] ) < 100 ) {
+                    $paperSize = $name;
+                    break;
+                }
             }
         }
 

@@ -279,6 +279,56 @@ body.watermarker-page {
     margin-top: 1em;
 }
 
+/* Apply-to toggle */
+.wm-options {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.wm-option-label {
+    display: block;
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-bottom: 8px;
+}
+
+.wm-toggle-group {
+    display: inline-flex;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.wm-toggle-btn {
+    padding: 8px 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: none;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    line-height: 1.4;
+}
+
+.wm-toggle-btn:not(:last-child) {
+    border-right: 1px solid #d1d5db;
+}
+
+.wm-toggle-btn:hover {
+    background: #f9fafb;
+    color: #374151;
+}
+
+.wm-toggle-btn.is-active {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.wm-toggle-btn.is-active:hover {
+    background: #2563eb;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
     body.watermarker-page {

@@ -61,7 +61,6 @@ final class Watermarker {
     public function activate() {
         add_option( 'watermarker_url_slug', 'letterhead' );
         add_option( 'watermarker_letterhead_id', '' );
-        add_option( 'watermarker_apply_all_pages', '1' );
 
         Watermarker_Frontend_Page::register_rewrite_rules();
         flush_rewrite_rules();

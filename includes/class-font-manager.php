@@ -8,10 +8,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Watermarker_Font_Manager {
 
-    /** Common Office fonts with TCPDF naming conventions. */
+    /** Common Office fonts with TCPDF naming conventions and PDF fallbacks. */
     private const FONT_FAMILIES = [
         'aptos' => [
             'label'    => 'Aptos',
+            'fallback' => 'Helvetica',
+            'aliases'  => [ 'Aptos Display', 'Aptos Narrow' ],
             'variants' => [
                 'regular'    => 'aptos',
                 'bold'       => 'aptosb',
@@ -21,6 +23,8 @@ class Watermarker_Font_Manager {
         ],
         'calibri' => [
             'label'    => 'Calibri',
+            'fallback' => 'Helvetica',
+            'aliases'  => [ 'Calibri Light' ],
             'variants' => [
                 'regular'    => 'calibri',
                 'bold'       => 'calibrib',
@@ -30,6 +34,8 @@ class Watermarker_Font_Manager {
         ],
         'cambria' => [
             'label'    => 'Cambria',
+            'fallback' => 'Times',
+            'aliases'  => [],
             'variants' => [
                 'regular'    => 'cambria',
                 'bold'       => 'cambriab',
@@ -39,6 +45,8 @@ class Watermarker_Font_Manager {
         ],
         'timesnewroman' => [
             'label'    => 'Times New Roman',
+            'fallback' => 'Times',
+            'aliases'  => [],
             'variants' => [
                 'regular'    => 'timesnewroman',
                 'bold'       => 'timesnewromanb',
@@ -48,6 +56,8 @@ class Watermarker_Font_Manager {
         ],
         'arial' => [
             'label'    => 'Arial',
+            'fallback' => 'Helvetica',
+            'aliases'  => [],
             'variants' => [
                 'regular'    => 'arial',
                 'bold'       => 'arialb',
@@ -57,6 +67,8 @@ class Watermarker_Font_Manager {
         ],
         'segoeui' => [
             'label'    => 'Segoe UI',
+            'fallback' => 'Helvetica',
+            'aliases'  => [],
             'variants' => [
                 'regular'    => 'segoeui',
                 'bold'       => 'segoeuib',
@@ -66,6 +78,8 @@ class Watermarker_Font_Manager {
         ],
         'consolas' => [
             'label'    => 'Consolas',
+            'fallback' => 'Courier',
+            'aliases'  => [ 'Cascadia Code', 'Cascadia Mono' ],
             'variants' => [
                 'regular'    => 'consolas',
                 'bold'       => 'consolasb',
@@ -89,7 +103,8 @@ class Watermarker_Font_Manager {
         $dir = self::get_fonts_dir();
         if ( ! is_dir( $dir ) ) {
             wp_mkdir_p( $dir );
-            file_put_contents( $dir . '.htaccess', "Deny from all\n" );
+            @file_put_contents( $dir . '.htaccess', "Deny from all\n" );
+            @file_put_contents( $dir . 'index.html', '' );
         }
         return $dir;
     }
@@ -143,6 +158,24 @@ class Watermarker_Font_Manager {
             }
         }
         return $labels;
+    }
+
+    /**
+     * Get the font substitution map: original font name → PDF-safe fallback.
+     * Skips fonts that have been uploaded (those will be used directly by TCPDF).
+     */
+    public static function get_font_fallbacks() {
+        $map = [];
+        foreach ( self::FONT_FAMILIES as $key => $family ) {
+            if ( self::is_font_installed( $key ) ) {
+                continue;
+            }
+            $map[ $family['label'] ] = $family['fallback'];
+            foreach ( $family['aliases'] as $alias ) {
+                $map[ $alias ] = $family['fallback'];
+            }
+        }
+        return $map;
     }
 
     /**

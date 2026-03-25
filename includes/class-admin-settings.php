@@ -42,10 +42,6 @@ class Watermarker_Admin_Settings {
         register_setting( 'watermarker_settings', 'watermarker_letterhead_id', [
             'sanitize_callback' => 'absint',
         ] );
-        register_setting( 'watermarker_settings', 'watermarker_apply_all_pages', [
-            'sanitize_callback' => 'absint',
-            'default'           => 1,
-        ] );
         register_setting( 'watermarker_settings', 'watermarker_show_logo', [
             'sanitize_callback' => 'absint',
             'default'           => 1,
@@ -91,7 +87,6 @@ class Watermarker_Admin_Settings {
     public function render_page() {
         $slug           = get_option( 'watermarker_url_slug', 'letterhead' );
         $letterhead_id  = get_option( 'watermarker_letterhead_id', '' );
-        $apply_all      = get_option( 'watermarker_apply_all_pages', '1' );
         $show_logo      = get_option( 'watermarker_show_logo', '1' );
         $show_site_name = get_option( 'watermarker_show_site_name', '1' );
         $has_letterhead = ! empty( $letterhead_id );
@@ -142,28 +137,6 @@ class Watermarker_Admin_Settings {
                                 Upload a <strong>PDF</strong> or <strong>image</strong> (PNG, JPG) to use as the letterhead background.
                                 For best results use a full-page PDF sized to your target paper (e.g.&nbsp;A4 or Letter).
                                 If the letterhead PDF has two pages, page&nbsp;1 is used for the first content page and page&nbsp;2 for subsequent pages.
-                            </p>
-                        </td>
-                    </tr>
-
-                    <!-- Apply to All Pages -->
-                    <tr>
-                        <th scope="row">Apply Letterhead To</th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <input type="radio" name="watermarker_apply_all_pages" value="1"
-                                        <?php checked( $apply_all, '1' ); ?>>
-                                    All pages
-                                </label><br>
-                                <label>
-                                    <input type="radio" name="watermarker_apply_all_pages" value="0"
-                                        <?php checked( $apply_all, '0' ); ?>>
-                                    First page only
-                                </label>
-                            </fieldset>
-                            <p class="description">
-                                When a multi-page document is uploaded, choose whether the letterhead appears on every page or just the first.
                             </p>
                         </td>
                     </tr>

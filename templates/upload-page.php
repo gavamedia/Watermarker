@@ -14,7 +14,6 @@ if ( ! defined( 'ABSPATH' ) ) {
     <meta charset="<?php bloginfo( 'charset' ); ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?php echo esc_html( $site_name ); ?> &mdash; Upload Document</title>
-    <link rel="stylesheet" href="<?php echo esc_url( WATERMARKER_PLUGIN_URL . 'assets/css/frontend.css?v=' . WATERMARKER_VERSION ); ?>">
     <?php wp_head(); ?>
 </head>
 <body class="watermarker-page">
@@ -126,17 +125,16 @@ if ( ! defined( 'ABSPATH' ) ) {
         </div>
     </div>
 
+    <div class="wm-options">
+        <label class="wm-option-label">Apply letterhead to:</label>
+        <div class="wm-toggle-group" id="wm-apply-toggle">
+            <button type="button" class="wm-toggle-btn is-active" data-value="1">All pages</button>
+            <button type="button" class="wm-toggle-btn" data-value="0">First page only</button>
+        </div>
+    </div>
+
     <?php endif; ?>
 </div>
-
-<script>
-    window.watermarkerConfig = {
-        ajaxUrl: <?php echo wp_json_encode( $ajax_url ); ?>,
-        nonce:   <?php echo wp_json_encode( $nonce ); ?>,
-        maxSize: <?php echo (int) wp_max_upload_size(); ?>
-    };
-</script>
-<script src="<?php echo esc_url( WATERMARKER_PLUGIN_URL . 'assets/js/frontend.js?v=' . WATERMARKER_VERSION ); ?>"></script>
 
 <?php wp_footer(); ?>
 </body>

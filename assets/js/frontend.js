@@ -18,6 +18,7 @@
     var downloadBtn   = document.getElementById('wm-download-btn');
     var resetBtn      = document.getElementById('wm-reset-btn');
     var retryBtn      = document.getElementById('wm-retry-btn');
+    var applyToggle   = document.getElementById('wm-apply-toggle');
 
     // ---- State helpers -------------------------------------------------
 
@@ -101,6 +102,23 @@
     if (resetBtn) resetBtn.addEventListener('click', function (e) { e.stopPropagation(); reset(); });
     if (retryBtn) retryBtn.addEventListener('click', function (e) { e.stopPropagation(); reset(); });
 
+    // ---- Apply-to toggle -----------------------------------------------
+
+    var applyAll = '1'; // Default: all pages.
+
+    if (applyToggle) {
+        var toggleBtns = applyToggle.querySelectorAll('.wm-toggle-btn');
+        for (var i = 0; i < toggleBtns.length; i++) {
+            toggleBtns[i].addEventListener('click', function () {
+                for (var j = 0; j < toggleBtns.length; j++) {
+                    toggleBtns[j].classList.remove('is-active');
+                }
+                this.classList.add('is-active');
+                applyAll = this.getAttribute('data-value');
+            });
+        }
+    }
+
     // ---- Upload --------------------------------------------------------
 
     function handleFile(file) {
@@ -117,6 +135,7 @@
         var formData = new FormData();
         formData.append('action', 'watermarker_upload');
         formData.append('nonce', cfg.nonce);
+        formData.append('apply_all', applyAll);
         formData.append('file', file);
 
         var xhr = new XMLHttpRequest();

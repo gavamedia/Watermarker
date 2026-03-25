@@ -118,7 +118,9 @@ class Watermarker_PDF_Processor {
                 }
             }
 
-            $output = tempnam( sys_get_temp_dir(), 'watermarker_out_' ) . '.pdf';
+            $tmp_base = tempnam( sys_get_temp_dir(), 'watermarker_out_' );
+            $output   = $tmp_base . '.pdf';
+            @unlink( $tmp_base );
             $pdf->Output( 'F', $output );
 
             return $output;
@@ -129,6 +131,7 @@ class Watermarker_PDF_Processor {
                     @unlink( $f );
                 }
             }
+            self::cleanup_image_cache();
         }
     }
 
@@ -195,19 +198,22 @@ class Watermarker_PDF_Processor {
         $pdf->Image( $image_path, $x, $y, $display_w, $display_h );
     }
 
+    /** Cache of converted images and list of temp files to clean up. */
+    private static $image_cache      = [];
+    private static $image_temp_files = [];
+
     /**
      * Convert non-native image formats (webp, bmp, tiff) to PNG so FPDF can use them.
      * Returns the original path unchanged for jpg/png/gif.
      */
     private function ensure_compatible_image( $path ) {
-        static $cache = [];
-        if ( isset( $cache[ $path ] ) ) {
-            return $cache[ $path ];
+        if ( isset( self::$image_cache[ $path ] ) ) {
+            return self::$image_cache[ $path ];
         }
 
         $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
         if ( in_array( $ext, self::NATIVE_IMAGE_EXT, true ) ) {
-            $cache[ $path ] = $path;
+            self::$image_cache[ $path ] = $path;
             return $path;
         }
 
@@ -227,25 +233,44 @@ class Watermarker_PDF_Processor {
         }
 
         if ( $gd_image ) {
-            $png = tempnam( sys_get_temp_dir(), 'wm_img_' ) . '.png';
+            $tmp_base = tempnam( sys_get_temp_dir(), 'wm_img_' );
+            $png      = $tmp_base . '.png';
+            @unlink( $tmp_base );
             imagepng( $gd_image, $png );
             imagedestroy( $gd_image );
-            $cache[ $path ] = $png;
+            self::$image_cache[ $path ]  = $png;
+            self::$image_temp_files[]    = $png;
             return $png;
         }
 
         // Fall back to Imagick (handles tiff and others).
         if ( class_exists( 'Imagick' ) ) {
-            $im  = new \Imagick( $path );
-            $png = tempnam( sys_get_temp_dir(), 'wm_img_' ) . '.png';
+            $im       = new \Imagick( $path );
+            $tmp_base = tempnam( sys_get_temp_dir(), 'wm_img_' );
+            $png      = $tmp_base . '.png';
+            @unlink( $tmp_base );
             $im->setImageFormat( 'png' );
             $im->writeImage( $png );
             $im->destroy();
-            $cache[ $path ] = $png;
+            self::$image_cache[ $path ]  = $png;
+            self::$image_temp_files[]    = $png;
             return $png;
         }
 
         throw new \Exception( "Cannot convert .{$ext} image — neither GD nor Imagick could handle it." );
+    }
+
+    /**
+     * Clean up any temporary image files created by ensure_compatible_image.
+     */
+    private static function cleanup_image_cache() {
+        foreach ( self::$image_temp_files as $f ) {
+            if ( file_exists( $f ) ) {
+                @unlink( $f );
+            }
+        }
+        self::$image_cache      = [];
+        self::$image_temp_files = [];
     }
 
     // ------------------------------------------------------------------
@@ -256,47 +281,13 @@ class Watermarker_PDF_Processor {
     private const PHPWORD_EXT = [ 'docx', 'rtf', 'html', 'htm' ];
 
     /**
-     * Font substitution map: each entry lists fallbacks in priority order.
-     * The first font found on the system wins. If none are found, the last
-     * entry is used as a safe default (core fonts available everywhere).
-     */
-    /**
-     * Font substitution map: Microsoft font → TCPDF-safe fallback.
-     * These must be fonts TCPDF can actually render (core PDF fonts or DejaVu).
-     */
-    private const FONT_FALLBACKS = [
-        'Aptos'            => 'Helvetica',
-        'Aptos Display'    => 'Helvetica',
-        'Aptos Narrow'     => 'Helvetica',
-        'Calibri'          => 'Helvetica',
-        'Calibri Light'    => 'Helvetica',
-        'Cambria'          => 'Times',
-        'Segoe UI'         => 'Helvetica',
-        'Consolas'         => 'Courier',
-        'Cascadia Code'    => 'Courier',
-        'Cascadia Mono'    => 'Courier',
-    ];
-
-    /**
-     * Get the effective font substitutions. Skips fonts that have been
-     * uploaded via the Font Manager (those will be used directly by TCPDF).
+     * Get the effective font substitutions from the Font Manager.
+     * Skips fonts that have been uploaded (those will be used directly by TCPDF).
      */
     private static function get_font_substitutions() {
-        // Check which fonts have been uploaded via the Font Manager.
-        $uploaded_labels = class_exists( 'Watermarker_Font_Manager' )
-            ? Watermarker_Font_Manager::get_installed_font_labels()
+        return class_exists( 'Watermarker_Font_Manager' )
+            ? Watermarker_Font_Manager::get_font_fallbacks()
             : [];
-
-        $subs = [];
-        foreach ( self::FONT_FALLBACKS as $original => $fallback ) {
-            // If the real font was uploaded, no substitution needed.
-            if ( in_array( $original, $uploaded_labels, true ) ) {
-                continue;
-            }
-            $subs[ $original ] = $fallback;
-        }
-
-        return $subs;
     }
 
     private function convert_office_to_pdf( $file_path, $ext ) {
@@ -311,8 +302,7 @@ class Watermarker_PDF_Processor {
 
         // Try LibreOffice first (much better quality).
         $has_shell = self::function_available( 'exec' )
-                  || self::function_available( 'shell_exec' )
-                  || function_exists( 'proc_open' );
+                  || self::function_available( 'shell_exec' );
 
         if ( $has_shell && self::find_libreoffice() ) {
             try {
@@ -345,7 +335,9 @@ class Watermarker_PDF_Processor {
      * @return string|null Path to the modified DOCX temp file, or null on failure.
      */
     private function preprocess_docx( $file_path ) {
-        $tmp = tempnam( sys_get_temp_dir(), 'wm_docx_' ) . '.docx';
+        $tmp_base = tempnam( sys_get_temp_dir(), 'wm_docx_' );
+        $tmp      = $tmp_base . '.docx';
+        @unlink( $tmp_base );
         if ( ! copy( $file_path, $tmp ) ) {
             return null;
         }
@@ -584,7 +576,9 @@ class Watermarker_PDF_Processor {
         // Apply the correct line height to each style.
         $this->fix_phpword_all_spacing( $phpWord, $spacing_map );
 
-        $output = tempnam( sys_get_temp_dir(), 'wm_phpword_' ) . '.pdf';
+        $tmp_base = tempnam( sys_get_temp_dir(), 'wm_phpword_' );
+        $output   = $tmp_base . '.pdf';
+        @unlink( $tmp_base );
 
         \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_TCPDF );
         \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf' );
@@ -613,10 +607,19 @@ class Watermarker_PDF_Processor {
             );
         }
 
+        // Give LibreOffice a generous but finite execution window.
+        $prev_limit = (int) ini_get( 'max_execution_time' );
+        @set_time_limit( max( $prev_limit, 120 ) );
+
+        // Use an isolated profile directory to allow concurrent conversions.
+        $profile_dir = sys_get_temp_dir() . '/wm_lo_profile_' . uniqid( '', true );
+        @mkdir( $profile_dir, 0700, true );
+
         $out_dir = sys_get_temp_dir();
         $cmd     = sprintf(
-            '%s --headless --norestore --convert-to pdf --outdir %s %s 2>&1',
+            '%s --headless --norestore -env:UserInstallation=file://%s --convert-to pdf --outdir %s %s 2>&1',
             escapeshellarg( $lo ),
+            $profile_dir,
             escapeshellarg( $out_dir ),
             escapeshellarg( $file_path )
         );
@@ -624,23 +627,19 @@ class Watermarker_PDF_Processor {
         $code   = 1;
         $output = [];
 
-        if ( self::function_available( 'exec' ) ) {
-            exec( $cmd, $output, $code );
-        } elseif ( self::function_available( 'shell_exec' ) ) {
-            $result = @shell_exec( $cmd );
-            $output = $result ? explode( "\n", $result ) : [];
-            $code   = ( $result !== null && $result !== false ) ? 0 : 1;
-        } elseif ( function_exists( 'proc_open' ) ) {
-            $proc = proc_open( $cmd, [ 1 => [ 'pipe', 'w' ], 2 => [ 'pipe', 'w' ] ], $pipes );
-            if ( is_resource( $proc ) ) {
-                $result = stream_get_contents( $pipes[1] );
-                fclose( $pipes[1] );
-                fclose( $pipes[2] );
-                $code   = proc_close( $proc );
-                $output = explode( "\n", $result );
+        try {
+            if ( self::function_available( 'exec' ) ) {
+                exec( $cmd, $output, $code );
+            } elseif ( self::function_available( 'shell_exec' ) ) {
+                $result = @shell_exec( $cmd );
+                $output = $result ? explode( "\n", $result ) : [];
+                // shell_exec cannot reliably report exit codes; check output file instead.
+                $code = 0;
+            } else {
+                throw new \Exception( 'No shell execution function is available (exec, shell_exec). Please ask your host to enable one.' );
             }
-        } else {
-            throw new \Exception( 'No shell execution function is available (exec, shell_exec, proc_open). Please ask your host to enable one.' );
+        } finally {
+            self::recursive_rmdir( $profile_dir );
         }
 
         $pdf_path = $out_dir . '/' . pathinfo( $file_path, PATHINFO_FILENAME ) . '.pdf';
@@ -652,20 +651,57 @@ class Watermarker_PDF_Processor {
     }
 
     /**
-     * Locate the LibreOffice binary on the system.
+     * Recursively remove a directory and its contents.
+     */
+    private static function recursive_rmdir( $dir ) {
+        if ( ! is_dir( $dir ) ) {
+            return;
+        }
+        $items = @scandir( $dir );
+        if ( ! $items ) {
+            return;
+        }
+        foreach ( $items as $item ) {
+            if ( '.' === $item || '..' === $item ) {
+                continue;
+            }
+            $path = $dir . '/' . $item;
+            is_dir( $path ) ? self::recursive_rmdir( $path ) : @unlink( $path );
+        }
+        @rmdir( $dir );
+    }
+
+    /**
+     * Check whether a PHP function is available and not in disable_functions.
      *
-     * @return string|null Path to the binary, or null if not found.
+     * @param  string $name Function name.
+     * @return bool
      */
     private static function function_available( $name ) {
         return function_exists( $name ) && ! in_array( $name, array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true );
     }
 
+    /** Cached result of find_libreoffice(). */
+    private static $libreoffice_path = null;
+    private static $libreoffice_searched = false;
+
+    /**
+     * Locate the LibreOffice binary on the system.
+     *
+     * @return string|null Path to the binary, or null if not found.
+     */
     public static function find_libreoffice() {
+        if ( self::$libreoffice_searched ) {
+            return self::$libreoffice_path;
+        }
+        self::$libreoffice_searched = true;
+
         // Try the PATH first (skip if shell_exec is disabled).
         if ( self::function_available( 'shell_exec' ) ) {
             foreach ( [ 'libreoffice', 'soffice' ] as $bin ) {
                 $result = trim( (string) @shell_exec( 'which ' . escapeshellarg( $bin ) . ' 2>/dev/null' ) );
                 if ( $result && is_executable( $result ) ) {
+                    self::$libreoffice_path = $result;
                     return $result;
                 }
             }
@@ -681,6 +717,7 @@ class Watermarker_PDF_Processor {
         ];
         foreach ( $paths as $p ) {
             if ( file_exists( $p ) && is_executable( $p ) ) {
+                self::$libreoffice_path = $p;
                 return $p;
             }
         }

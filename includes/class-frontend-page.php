@@ -29,7 +29,7 @@ class Watermarker_Frontend_Page {
     public static function register_rewrite_rules() {
         $slug = get_option( 'watermarker_url_slug', 'letterhead' );
         add_rewrite_rule(
-            '^' . preg_quote( $slug, '/' ) . '/?$',
+            '^' . preg_quote( $slug ) . '/?$',
             'index.php?watermarker_page=1',
             'top'
         );
@@ -58,6 +58,14 @@ class Watermarker_Frontend_Page {
         $site_name  = get_bloginfo( 'name' );
         $has_lh     = (bool) get_option( 'watermarker_letterhead_id', '' );
 
+        wp_enqueue_style( 'watermarker-frontend', WATERMARKER_PLUGIN_URL . 'assets/css/frontend.css', [], WATERMARKER_VERSION );
+        wp_enqueue_script( 'watermarker-frontend', WATERMARKER_PLUGIN_URL . 'assets/js/frontend.js', [], WATERMARKER_VERSION, true );
+        wp_localize_script( 'watermarker-frontend', 'watermarkerConfig', [
+            'ajaxUrl' => $ajax_url,
+            'nonce'   => $nonce,
+            'maxSize' => wp_max_upload_size(),
+        ] );
+
         include WATERMARKER_PLUGIN_DIR . 'templates/upload-page.php';
         exit;
     }
@@ -71,6 +79,14 @@ class Watermarker_Frontend_Page {
         if ( ! wp_verify_nonce( sanitize_text_field( $_POST['nonce'] ?? '' ), 'watermarker_upload' ) ) {
             wp_send_json_error( [ 'message' => 'Invalid security token. Please refresh the page and try again.' ] );
         }
+
+        // Rate limiting: 10 uploads per 5 minutes per IP.
+        $ip_key   = 'watermarker_rate_' . md5( $_SERVER['REMOTE_ADDR'] ?? '' );
+        $attempts = (int) get_transient( $ip_key );
+        if ( $attempts >= 10 ) {
+            wp_send_json_error( [ 'message' => 'Too many uploads. Please wait a few minutes and try again.' ] );
+        }
+        set_transient( $ip_key, $attempts + 1, 5 * MINUTE_IN_SECONDS );
 
         if ( empty( $_FILES['file'] ) || UPLOAD_ERR_OK !== (int) $_FILES['file']['error'] ) {
             $code = (int) ( $_FILES['file']['error'] ?? -1 );
@@ -87,12 +103,20 @@ class Watermarker_Frontend_Page {
 
         $file = $_FILES['file'];
 
+        // Validate file extension first (the authoritative gate).
+        $ext         = strtolower( pathinfo( $file['name'], PATHINFO_EXTENSION ) );
+        $allowed_ext = [ 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'txt', 'html', 'htm', 'odt', 'ods', 'odp', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif' ];
+
+        if ( ! in_array( $ext, $allowed_ext, true ) ) {
+            wp_send_json_error( [ 'message' => 'Unsupported file extension: .' . esc_html( $ext ) ] );
+        }
+
         // Validate MIME type via fileinfo (not the browser-supplied type).
         $finfo = finfo_open( FILEINFO_MIME_TYPE );
         $mime  = finfo_file( $finfo, $file['tmp_name'] );
         finfo_close( $finfo );
 
-        $allowed = [
+        $allowed_mime = [
             'application/pdf',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -114,22 +138,15 @@ class Watermarker_Frontend_Page {
             'image/webp',
             'image/bmp',
             'image/tiff',
-            // DOCX is a zip; some servers report this.
-            'application/zip',
-            'application/x-zip-compressed',
-            'application/octet-stream',
         ];
 
-        // For generic MIME types, also check the file extension.
-        $ext           = strtolower( pathinfo( $file['name'], PATHINFO_EXTENSION ) );
-        $allowed_ext   = [ 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'txt', 'html', 'htm', 'odt', 'ods', 'odp', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif' ];
+        // ZIP-based formats (docx, xlsx, pptx) may report as zip/octet-stream.
+        $zip_ext = [ 'docx', 'xlsx', 'pptx' ];
+        $generic_mime_ok = in_array( $ext, $zip_ext, true )
+            && in_array( $mime, [ 'application/zip', 'application/x-zip-compressed', 'application/octet-stream' ], true );
 
-        if ( ! in_array( $mime, $allowed, true ) && ! in_array( $ext, $allowed_ext, true ) ) {
-            wp_send_json_error( [ 'message' => 'Unsupported file type (' . esc_html( $mime ) . '). Please upload a PDF, Word document, or image.' ] );
-        }
-
-        if ( ! in_array( $ext, $allowed_ext, true ) ) {
-            wp_send_json_error( [ 'message' => 'Unsupported file extension: .' . esc_html( $ext ) ] );
+        if ( ! in_array( $mime, $allowed_mime, true ) && ! $generic_mime_ok ) {
+            wp_send_json_error( [ 'message' => 'Unsupported file type. Please upload a PDF, Word document, or image.' ] );
         }
 
         // Move to temp dir.
@@ -142,13 +159,17 @@ class Watermarker_Frontend_Page {
 
         try {
             $processor  = new Watermarker_PDF_Processor();
-            $apply_all  = (bool) get_option( 'watermarker_apply_all_pages', '1' );
+            $apply_all  = ! empty( $_POST['apply_all'] );
             $output     = $processor->process( $dest, $lh_path, $apply_all );
 
             // Move output into our temp dir with a friendly name.
             $out_name  = pathinfo( $file['name'], PATHINFO_FILENAME ) . '-letterhead.pdf';
             $out_final = $temp_dir . wp_unique_filename( $temp_dir, sanitize_file_name( $out_name ) );
-            rename( $output, $out_final );
+            if ( ! @rename( $output, $out_final ) ) {
+                // rename() fails across filesystem boundaries; fall back to copy.
+                copy( $output, $out_final );
+                @unlink( $output );
+            }
 
             // Create time-limited download key.
             $key = wp_generate_password( 32, false );
@@ -160,7 +181,13 @@ class Watermarker_Frontend_Page {
                 'filename'     => $out_name,
             ] );
         } catch ( \Exception $e ) {
-            wp_send_json_error( [ 'message' => $e->getMessage() ] );
+            error_log( 'Watermarker processing error: ' . $e->getMessage() );
+            // Only show safe messages to the client; hide internal paths/details.
+            $safe_msg = $e->getMessage();
+            if ( strpos( $safe_msg, '/' ) !== false || strpos( $safe_msg, '\\' ) !== false ) {
+                $safe_msg = 'An error occurred while processing your document. Please try again or upload a PDF instead.';
+            }
+            wp_send_json_error( [ 'message' => $safe_msg ] );
         } finally {
             // Always remove the uploaded source file.
             if ( file_exists( $dest ) ) {
@@ -182,7 +209,7 @@ class Watermarker_Frontend_Page {
             wp_die( 'This download link has expired or is invalid. Please process your document again.', 'Download expired', [ 'response' => 410 ] );
         }
 
-        $filename = basename( $path );
+        $filename = sanitize_file_name( basename( $path ) );
 
         header( 'Content-Type: application/pdf' );
         header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
@@ -191,8 +218,9 @@ class Watermarker_Frontend_Page {
 
         readfile( $path );
 
-        // Cleanup.
-        @unlink( $path );
+        // Invalidate the download key; the temp file will be cleaned up
+        // by cleanup_old_temp_files() rather than deleted immediately,
+        // so interrupted downloads can be retried within the window.
         delete_transient( 'watermarker_dl_' . $key );
         exit;
     }
@@ -207,8 +235,9 @@ class Watermarker_Frontend_Page {
 
         if ( ! is_dir( $dir ) ) {
             wp_mkdir_p( $dir );
-            // Prevent direct access.
+            // Prevent direct access (Apache + Nginx fallback).
             @file_put_contents( $dir . '.htaccess', "Deny from all\n" );
+            @file_put_contents( $dir . 'index.html', '' );
             @file_put_contents( $dir . 'index.php', '<?php // Silence is golden.' );
         }
 
@@ -223,7 +252,7 @@ class Watermarker_Frontend_Page {
         $now = time();
 
         foreach ( glob( $dir . '*' ) as $file ) {
-            if ( is_file( $file ) && ! in_array( basename( $file ), [ '.htaccess', 'index.php' ], true ) ) {
+            if ( is_file( $file ) && ! in_array( basename( $file ), [ '.htaccess', 'index.html', 'index.php' ], true ) ) {
                 if ( $now - filemtime( $file ) > 7200 ) {
                     @unlink( $file );
                 }
