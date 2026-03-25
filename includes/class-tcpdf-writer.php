@@ -25,12 +25,15 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $pdf->SetAutoPageBreak( true, $marginBottom );
         }
 
+        // Remove TCPDF's default cell height ratio (1.25) — it overrides
+        // CSS line-height values, making lines taller than intended.
+        // Our CSS line-height already accounts for font metrics (via the
+        // WORD_SINGLE_LINE_FACTOR of 1.15).
+        $pdf->setCellHeightRatio( 1.0 );
+
         $pdf->AddPage();
 
-        // Set minimal vertical space for <p> tags.
-        // TCPDF setHtmlVSpace: 'n' = number of lines, 'h' = line height in pt.
-        // We want near-zero spacing between <p> tags since PhpWord handles
-        // paragraph spacing via inline CSS margin-top/margin-bottom.
+        // Zero TCPDF's default <p> tag spacing — CSS handles all spacing.
         $pdf->setHtmlVSpace( [
             'p' => [
                 [ 'n' => 0, 'h' => 0 ],
@@ -81,9 +84,15 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
 
         $html = $this->getContent();
 
-        // Fix the p,.Normal CSS rule: zero out its margin-bottom so it doesn't
-        // add 8pt to every paragraph. Paragraphs that need spacing have it inline.
-        // Keep line-height for unstyled paragraphs that don't have inline line-height.
+        // Extract the document default margin-bottom from the p,.Normal CSS rule
+        // (PhpWord generates this from the Normal style's spaceAfter).
+        $defaultMarginBottom = '0';
+        if ( preg_match( '/p,\s*\.Normal\s*\{[^}]*margin-bottom:\s*([^;]+);/', $html, $mb ) ) {
+            $defaultMarginBottom = trim( $mb[1] );
+        }
+
+        // Zero out the p,.Normal CSS rule — styled paragraphs have inline margins,
+        // and we'll handle unstyled paragraphs and TextBreaks explicitly.
         $html = preg_replace(
             '/p,\s*\.Normal\s*\{[^}]*\}/',
             'p, .Normal {margin-top: 0; margin-bottom: 0;}',
@@ -91,19 +100,18 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         );
 
         // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
-        // Zero them out explicitly so they're just a single blank line.
+        // In the DOCX these have before=0 after=0, so zero margins + line-height.
         $html = str_replace(
             '<p>&nbsp;</p>',
             '<p style="margin:0; padding:0; line-height: 1.15;">&nbsp;</p>',
             $html
         );
 
-        // Unstyled content paragraphs (P23-P26) now have no margin from the CSS rule.
-        // They need their spacing back. They only have inline line-height, no margins.
-        // Add margin-bottom to <p> tags that have line-height but no margin in their style.
+        // Unstyled content paragraphs only have inline line-height, no margins.
+        // Apply the document default spaceAfter as margin-bottom.
         $html = preg_replace(
             '/<p style="line-height: ([^"]+);">/',
-            '<p style="margin-top: 0; margin-bottom: 4pt; line-height: $1;">',
+            '<p style="margin-top: 0; margin-bottom: ' . $defaultMarginBottom . '; line-height: $1;">',
             $html
         );
 
