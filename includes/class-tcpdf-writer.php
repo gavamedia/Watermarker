@@ -108,19 +108,29 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         );
 
         // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
-        // PhpWord strips their font size. Use the document's most common content
-        // font size so they match the surrounding text height.
+        // PhpWord strips their font size. Use a size slightly above the content
+        // font to approximate the DOCX paragraph mark height (typically 11pt
+        // when content is 10pt).
+        $textBreakSize = intval( $contentFontSize ) + 1;
         $html = str_replace(
             '<p>&nbsp;</p>',
-            '<p style="margin:0; padding:0; font-size: ' . $contentFontSize . '; line-height: 1.0;">&nbsp;</p>',
+            '<p style="margin:0; padding:0; font-size: ' . $textBreakSize . 'pt; line-height: 1.0;">&nbsp;</p>',
             $html
         );
 
         // Unstyled content paragraphs only have inline line-height, no margins.
-        // Apply the document default spaceAfter as margin-bottom.
+        // TCPDF ignores CSS margin-bottom on <p> when setHtmlVSpace is zeroed,
+        // so we insert a spacer <p> after each to simulate the document default
+        // spaceAfter. Use font-size to control spacer height (TCPDF multiplies
+        // by cellHeightRatio, so 6pt * 1.15 ≈ 7pt gap, close to Word's 8pt).
         $html = preg_replace(
             '/<p style="line-height: ([^"]+);">/',
-            '<p style="margin-top: 0; margin-bottom: ' . $defaultMarginBottom . '; line-height: $1;">',
+            '<p class="unstyled-para" style="margin-top: 0; margin-bottom: 0; line-height: $1;">',
+            $html
+        );
+        $html = preg_replace(
+            '/(<p class="unstyled-para"[^>]*>.*?<\/p>)\n/s',
+            '$1' . "\n" . '<p style="margin:0; padding:0; font-size: 6pt; line-height: 0.5;">&nbsp;</p>' . "\n",
             $html
         );
 
