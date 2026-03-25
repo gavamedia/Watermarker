@@ -238,13 +238,14 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
                 // Extract font-size from the span to calculate superscript size.
                 $supSize = '';
                 if ( preg_match( '/font-size:\s*([\d.]+)pt/', $style, $fs ) ) {
-                    // Word renders superscript at ~58% of the parent font size,
-                    // but TCPDF's <sup> Y-shift (0.7 * fontSizePt) expands the
-                    // line. We use a smaller ratio (0.45) to keep the visual
-                    // weight subtle and the Y-shift small enough that the line
-                    // height stays close to normal.
-                    $sz = round( (float) $fs[1] * 0.5, 1 );
+                    // Word renders superscript at ~58% of the parent font size.
+                    // TCPDF's <sup> tag shifts text up by 0.7 × fontSize, so
+                    // the font-size controls both glyph size and vertical offset.
+                    $sz = round( (float) $fs[1] * 0.58, 1 );
                     $supSize = ' style="font-size: ' . $sz . 'pt; line-height: 0;"';
+                    // Also update the font-size in the inner span style so it
+                    // doesn't override the <sup> tag's font-size.
+                    $style = preg_replace( '/font-size:\s*[\d.]+pt/', 'font-size: ' . $sz . 'pt', $style );
                 }
                 $style = preg_replace( '/\s*vertical-align:\s*super;?\s*/', '', $style );
                 $style = trim( $style, '; ' );
@@ -263,8 +264,10 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
                 $style = $m[1];
                 $subSize = '';
                 if ( preg_match( '/font-size:\s*([\d.]+)pt/', $style, $fs ) ) {
-                    $sz = round( (float) $fs[1] * 0.45, 1 );
+                    $sz = round( (float) $fs[1] * 0.58, 1 );
                     $subSize = ' style="font-size: ' . $sz . 'pt; line-height: 0.5;"';
+                    // Also update the font-size in the inner span style.
+                    $style = preg_replace( '/font-size:\s*[\d.]+pt/', 'font-size: ' . $sz . 'pt', $style );
                 }
                 $style = preg_replace( '/\s*vertical-align:\s*sub;?\s*/', '', $style );
                 $style = trim( $style, '; ' );
