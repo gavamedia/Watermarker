@@ -3,7 +3,7 @@
  * Plugin Name: Watermarker
  * Plugin URI:  https://gavamedia.com
  * Description: Upload documents and combine them with your letterhead template to create branded PDFs. Supports PDF, DOCX, images, and more.
- * Version:     1.1.0
+ * Version:     1.1.1
  * Author:      GAVAMEDIA
  * Author URI:  https://gavamedia.com
  * License:     GPL v2 or later
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'WATERMARKER_VERSION', '1.1.0' );
+define( 'WATERMARKER_VERSION', '1.1.1' );
 define( 'WATERMARKER_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WATERMARKER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
