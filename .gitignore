@@ -17,6 +17,7 @@ composer.phar
 
 # Test files
 DELETE.*
+OUTPUT.*
 
 # Unused LibreOffice macro directory
 assets/libreoffice-profile/user/basic/
