@@ -25,11 +25,10 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $pdf->SetAutoPageBreak( true, $marginBottom );
         }
 
-        // Remove TCPDF's default cell height ratio (1.25) — it overrides
-        // CSS line-height values, making lines taller than intended.
-        // Our CSS line-height already accounts for font metrics (via the
-        // WORD_SINGLE_LINE_FACTOR of 1.15).
-        $pdf->setCellHeightRatio( 1.0 );
+        // Set TCPDF's cell height ratio to match Word's single-spacing
+        // for Western fonts (~1.15× font size). This is used as the base
+        // line height and also affects margin/padding rendering.
+        $pdf->setCellHeightRatio( 1.15 );
 
         $pdf->AddPage();
 
@@ -113,7 +112,7 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         // font size so they match the surrounding text height.
         $html = str_replace(
             '<p>&nbsp;</p>',
-            '<p style="margin:0; padding:0; font-size: ' . $contentFontSize . '; line-height: 1.15;">&nbsp;</p>',
+            '<p style="margin:0; padding:0; font-size: ' . $contentFontSize . '; line-height: 1.0;">&nbsp;</p>',
             $html
         );
 

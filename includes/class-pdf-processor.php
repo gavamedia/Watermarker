@@ -410,16 +410,9 @@ class Watermarker_PDF_Processor {
      * and the document default. Maps both styleId and w:name to handle
      * PhpWord's inconsistent naming (registry uses w:name, elements use styleId).
      */
-    /**
-     * Word's "single spacing" is font-metric-based, not 1.0x font size.
-     * For typical Western fonts, single line height ≈ 1.15x the font size.
-     * So: CSS line-height = (w:line / 240) * WORD_SINGLE_LINE_FACTOR
-     */
-    private const WORD_SINGLE_LINE_FACTOR = 1.15;
-
     private function read_docx_spacing_map( $file_path ) {
         $result = [
-            'default' => self::WORD_SINGLE_LINE_FACTOR, // Single spacing default.
+            'default' => 1.0, // Single spacing = 1.0 (TCPDF cellHeightRatio handles the base).
             'styles'  => [],
         ];
 
@@ -443,7 +436,7 @@ class Watermarker_PDF_Processor {
         // 1. Document default from pPrDefault.
         if ( preg_match( '/<w:pPrDefault>.*?<\/w:pPrDefault>/s', $styles_xml, $dm ) ) {
             if ( preg_match( '/w:line="(\d+)"/', $dm[0], $lm ) ) {
-                $result['default'] = ( (int) $lm[1] / 240.0 ) * self::WORD_SINGLE_LINE_FACTOR;
+                $result['default'] = (int) $lm[1] / 240.0;
             }
         }
 
@@ -463,7 +456,7 @@ class Watermarker_PDF_Processor {
                 // Look for w:spacing with w:line inside this style's pPr.
                 if ( preg_match( '/<w:pPr>.*?<\/w:pPr>/s', $block, $ppr ) ) {
                     if ( preg_match( '/w:line="(\d+)"/', $ppr[0], $slm ) ) {
-                        $lh = ( (int) $slm[1] / 240.0 ) * self::WORD_SINGLE_LINE_FACTOR;
+                        $lh = (int) $slm[1] / 240.0;
                         // Map under both names so lookups work regardless of which key PhpWord uses.
                         if ( $style_id ) {
                             $result['styles'][ $style_id ] = $lh;
