@@ -69,6 +69,14 @@ if ( ! defined( 'ABSPATH' ) ) {
         </div>
     <?php else : ?>
 
+    <div class="wm-options">
+        <label class="wm-option-label">Apply letterhead to:</label>
+        <div class="wm-toggle-group" id="wm-apply-toggle">
+            <button type="button" class="wm-toggle-btn is-active" data-value="1">All pages</button>
+            <button type="button" class="wm-toggle-btn" data-value="0">First page only</button>
+        </div>
+    </div>
+
     <div class="wm-upload-area" id="wm-drop-zone">
         <div class="wm-drop-idle" id="wm-drop-idle">
             <svg class="wm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -122,14 +130,6 @@ if ( ! defined( 'ABSPATH' ) ) {
                 <p class="wm-result-text" id="wm-error-text">Something went wrong.</p>
                 <button type="button" class="wm-btn wm-btn--primary" id="wm-retry-btn">Try again</button>
             </div>
-        </div>
-    </div>
-
-    <div class="wm-options">
-        <label class="wm-option-label">Apply letterhead to:</label>
-        <div class="wm-toggle-group" id="wm-apply-toggle">
-            <button type="button" class="wm-toggle-btn is-active" data-value="1">All pages</button>
-            <button type="button" class="wm-toggle-btn" data-value="0">First page only</button>
         </div>
     </div>
 
