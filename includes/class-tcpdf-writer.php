@@ -26,17 +26,23 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         }
 
         // Set TCPDF's cell height ratio — the base multiplier for all
-        // cell/line heights in TCPDF. We keep this at 1.15 (not higher)
-        // because TextBreak and spacer paragraphs rely on it being modest.
-        // Content line-height is controlled separately via CSS line-height
-        // boost (1 → 1.165) to match Word's font-metric-based spacing.
-        $pdf->setCellHeightRatio( 1.15 );
+        // cell/line heights in TCPDF. CSS line-height overrides this for
+        // elements that have it set. This value affects elements without
+        // an explicit CSS line-height. Match the font-metric factor used
+        // for line-height scaling (Aptos single-line height / font-size).
+        $pdf->setCellHeightRatio( 1.215 );
 
         $pdf->AddPage();
 
-        // Zero TCPDF's default <p> tag spacing — CSS handles all spacing.
+        // Zero TCPDF's default tag spacing — CSS handles all spacing.
+        // The <div> wrapper (PhpWord's section container) and <p> tags
+        // both add default vspace that we control via CSS instead.
         $pdf->setHtmlVSpace( [
             'p' => [
+                [ 'n' => 0, 'h' => 0 ],
+                [ 'n' => 0, 'h' => 0 ],
+            ],
+            'div' => [
                 [ 'n' => 0, 'h' => 0 ],
                 [ 'n' => 0, 'h' => 0 ],
             ],
@@ -107,6 +113,22 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $contentFontSize = key( $counts );
         }
 
+        // Override the body and * font-size that PhpWord generates (12pt default)
+        // with the actual content font-size. TCPDF calculates <p> line-height
+        // using the <p>'s inherited font-size (not the inner <span>'s), so a
+        // 12pt body with 10pt spans and line-height:1.165 would produce
+        // 12*1.165=13.98pt lines instead of the intended 10*1.165=11.65pt.
+        $html = preg_replace(
+            '/body\s*\{([^}]*?)font-size:\s*[^;]+;/',
+            'body {${1}font-size: ' . $contentFontSize . ';',
+            $html
+        );
+        $html = preg_replace(
+            '/\*\s*\{([^}]*?)font-size:\s*[^;]+;/',
+            '* {${1}font-size: ' . $contentFontSize . ';',
+            $html
+        );
+
         // Zero out the p,.Normal CSS rule — styled paragraphs have inline margins,
         // and we'll handle unstyled paragraphs and TextBreaks explicitly below.
         $html = preg_replace(
@@ -115,22 +137,50 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $html
         );
 
+        // Convert vertical-align: super/sub CSS (which TCPDF ignores) to
+        // proper <sup>/<sub> HTML tags that TCPDF does render.
+        $html = $this->convert_vertical_align_to_tags( $html );
+
+        // Scale all CSS line-height values to compensate for the difference
+        // between font-size and the actual single-line height in Word.
+        // Word computes line height as: (w:line/240) × singleLineHeight,
+        // where singleLineHeight comes from font metrics (ascender+descender+
+        // lineGap). For Aptos 10pt, singleLineHeight ≈ 12.1pt = 1.21×10pt.
+        // TCPDF computes line height as: cssLineHeight × fontSize. So we
+        // multiply all PhpWord line-height values by this font-metric factor.
+        $fontMetricFactor = 1.215;
+        $html = preg_replace_callback(
+            '/line-height:\s*([\d.]+);/',
+            function ( $m ) use ( $fontMetricFactor ) {
+                $lh = (float) $m[1];
+                $scaled = round( $lh * $fontMetricFactor, 4 );
+                return 'line-height: ' . $scaled . ';';
+            },
+            $html
+        );
+
+        // --- Post-scaling: insert TextBreaks and spacers with exact pt sizes ---
+        // These are inserted AFTER the line-height scaling pass so their
+        // line-height values are not affected by the font-metric factor.
+
         // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
-        // PhpWord strips their font size. Use a size slightly above the content
-        // font to approximate the DOCX paragraph mark height (typically 11pt
-        // when content is 10pt).
-        $textBreakSize = intval( $contentFontSize ) + 1;
+        // PhpWord strips their font size. Use the content font-size with
+        // a line-height that matches the font-metric single-line height.
+        // TextBreaks use a slightly higher line-height than content because
+        // Word's empty-paragraph height includes paragraph mark metrics
+        // that add ~0.8pt more per line than text-bearing paragraphs.
+        $textBreakLh = 1.29;
         $html = str_replace(
             '<p>&nbsp;</p>',
-            '<p style="margin:0; padding:0; font-size: ' . $textBreakSize . 'pt; line-height: 1.0;">&nbsp;</p>',
+            '<p style="margin:0; padding:0; font-size: ' . $contentFontSize . '; line-height: ' . $textBreakLh . ';">&nbsp;</p>',
             $html
         );
 
         // Unstyled content paragraphs only have inline line-height, no margins.
         // TCPDF ignores CSS margin-bottom on <p> when setHtmlVSpace is zeroed,
         // so we insert a spacer <p> after each to simulate the document default
-        // spaceAfter (160 twips = 8pt). Use font-size to control spacer height
-        // (TCPDF multiplies by cellHeightRatio, so 7pt * 1.15 ≈ 8pt gap).
+        // spaceAfter (160 twips = 8pt). Use font-size: 8pt with line-height: 1
+        // to produce an exact 8pt gap.
         $html = preg_replace(
             '/<p style="line-height: ([^"]+);">/',
             '<p class="unstyled-para" style="margin-top: 0; margin-bottom: 0; line-height: $1;">',
@@ -138,23 +188,16 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         );
         $html = preg_replace(
             '/(<p class="unstyled-para"[^>]*>.*?<\/p>)\n/s',
-            '$1' . "\n" . '<p style="margin:0; padding:0; font-size: 7pt; line-height: 0.5;">&nbsp;</p>' . "\n",
+            '$1' . "\n" . '<p style="margin:0; padding:0; font-size: 8pt; line-height: 1.0;">&nbsp;</p>' . "\n",
             $html
         );
 
-        // Convert vertical-align: super/sub CSS (which TCPDF ignores) to
-        // proper <sup>/<sub> HTML tags that TCPDF does render.
-        $html = $this->convert_vertical_align_to_tags( $html );
-
-        // Boost line-height: 1 (DOCX single-spacing w:line="240") to match
-        // Word's actual rendering. Word's "single" line spacing uses font
-        // metrics (usWinAscent+usWinDescent), yielding ~1.165× effective
-        // line height for Helvetica (our substitute for Aptos). TCPDF
-        // interprets line-height: 1 as exactly 1×, so we boost styled
-        // paragraphs to 1.165: max(cellHeightRatio=1.15, 1.165) × fontSize.
+        // Remove trailing TextBreak paragraphs right before </div> — these
+        // are an artifact of Word's requirement for a final paragraph mark
+        // and add unwanted vertical space that can trigger a page break.
         $html = preg_replace(
-            '/line-height:\s*1;/',
-            'line-height: 1.165;',
+            '/(<p style="margin:0; padding:0; font-size:[^"]*">&nbsp;<\/p>\s*)+<\/div>/s',
+            '</div>',
             $html
         );
 
