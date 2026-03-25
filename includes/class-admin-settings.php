@@ -167,32 +167,59 @@ class Watermarker_Admin_Settings {
             <hr>
             <h2>System Info</h2>
             <table class="widefat fixed" style="max-width:600px">
-                <tbody>
-                    <tr>
-                        <td><strong>Upload page URL</strong></td>
-                        <td><a href="<?php echo esc_url( home_url( '/' . $slug . '/' ) ); ?>" target="_blank"><?php echo esc_html( home_url( '/' . $slug . '/' ) ); ?></a></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Max upload size</strong></td>
-                        <td><?php echo esc_html( size_format( wp_max_upload_size() ) ); ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>LibreOffice</strong></td>
-                        <td>
-                            <?php
-                            try {
-                                $lo = Watermarker_PDF_Processor::find_libreoffice();
-                            } catch ( \Throwable $e ) {
-                                $lo = null;
-                            }
-                            echo $lo
-                                ? '<span style="color:green">Found:</span> <code>' . esc_html( $lo ) . '</code>'
-                                : '<span style="color:orange">Not found</span> &mdash; DOCX / Office format conversion will not work. Install LibreOffice on the server to enable it.';
-                            ?>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+	                <tbody>
+	                    <tr>
+	                        <td><strong>Upload page URL</strong></td>
+	                        <td><a href="<?php echo esc_url( home_url( '/' . $slug . '/' ) ); ?>" target="_blank"><?php echo esc_html( home_url( '/' . $slug . '/' ) ); ?></a></td>
+	                    </tr>
+	                    <tr>
+	                        <td><strong>Max upload size</strong></td>
+	                        <td><?php echo esc_html( size_format( wp_max_upload_size() ) ); ?></td>
+	                    </tr>
+	                    <tr>
+	                        <td><strong>Private temp storage</strong></td>
+	                        <td>
+	                            <?php
+	                            try {
+	                                $temp_dir = Watermarker_Temp_Storage::get_private_temp_dir();
+	                                echo '<span style="color:green">Ready:</span> <code>' . esc_html( $temp_dir ) . '</code><br>';
+	                                echo '<span class="description">Uploads and generated PDFs are stored here briefly so they are not exposed under a public uploads URL.</span>';
+	                            } catch ( \Throwable $e ) {
+	                                echo '<span style="color:#b32d2e">Unavailable</span> &mdash; ' . esc_html( $e->getMessage() );
+	                            }
+	                            ?>
+	                        </td>
+	                    </tr>
+	                    <tr>
+	                        <td><strong>LibreOffice</strong></td>
+	                        <td>
+	                            <?php
+	                            try {
+	                                $lo = Watermarker_PDF_Processor::find_libreoffice();
+	                            } catch ( \Throwable $e ) {
+	                                $lo = null;
+	                            }
+	                            echo $lo
+	                                ? '<span style="color:green">Found:</span> <code>' . esc_html( $lo ) . '</code>'
+	                                : '<span style="color:orange">Not found</span> &mdash; DOCX / Office format conversion will not work. Install LibreOffice on the server to enable it.';
+	                            ?>
+	                        </td>
+	                    </tr>
+	                    <tr>
+	                        <td><strong>PHP extensions</strong></td>
+	                        <td>
+	                            <?php
+	                            $fileinfo_ok = function_exists( 'finfo_open' ) && defined( 'FILEINFO_MIME_TYPE' );
+	                            $zip_ok      = class_exists( 'ZipArchive' );
+	                            ?>
+	                            Fileinfo:
+	                            <?php echo $fileinfo_ok ? '<span style="color:green">Loaded</span>' : '<span style="color:#b32d2e">Missing</span>'; ?><br>
+	                            ZipArchive:
+	                            <?php echo $zip_ok ? '<span style="color:green">Loaded</span>' : '<span style="color:orange">Missing</span> &mdash; DOCX pre-processing and PHP fallback conversion will be limited without it.'; ?>
+	                        </td>
+	                    </tr>
+	                </tbody>
+	            </table>
 
             <hr>
             <h2>Fonts</h2>

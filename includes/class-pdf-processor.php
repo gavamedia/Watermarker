@@ -20,6 +20,19 @@ class Watermarker_PDF_Processor {
     private const OFFICE_EXT = [ 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'txt', 'html', 'htm', 'odt', 'ods', 'odp', 'csv' ];
 
     /**
+     * Public helper for callers that need to identify "heavy" office-style uploads.
+     *
+     * The frontend uses this when applying stricter rate limits to conversions that
+     * may invoke LibreOffice or PhpWord/TCPDF and therefore cost more server time.
+     *
+     * @param string $ext File extension without the leading dot.
+     * @return bool
+     */
+    public static function is_office_extension( $ext ) {
+        return in_array( strtolower( (string) $ext ), self::OFFICE_EXT, true );
+    }
+
+    /**
      * Process an uploaded file and overlay it on the letterhead.
      *
      * @param  string $uploaded_path   Absolute path to the uploaded file.
@@ -118,9 +131,8 @@ class Watermarker_PDF_Processor {
                 }
             }
 
-            $tmp_base = tempnam( sys_get_temp_dir(), 'watermarker_out_' );
-            $output   = $tmp_base . '.pdf';
-            @unlink( $tmp_base );
+            // Generated PDFs live in our private temp area, never in uploads/.
+            $output = Watermarker_Temp_Storage::generate_file_path( 'output_', 'pdf' );
             $pdf->Output( 'F', $output );
 
             return $output;
@@ -233,9 +245,7 @@ class Watermarker_PDF_Processor {
         }
 
         if ( $gd_image ) {
-            $tmp_base = tempnam( sys_get_temp_dir(), 'wm_img_' );
-            $png      = $tmp_base . '.png';
-            @unlink( $tmp_base );
+            $png = Watermarker_Temp_Storage::generate_file_path( 'image_', 'png' );
             imagepng( $gd_image, $png );
             imagedestroy( $gd_image );
             self::$image_cache[ $path ]  = $png;
@@ -246,9 +256,7 @@ class Watermarker_PDF_Processor {
         // Fall back to Imagick (handles tiff and others).
         if ( class_exists( 'Imagick' ) ) {
             $im       = new \Imagick( $path );
-            $tmp_base = tempnam( sys_get_temp_dir(), 'wm_img_' );
-            $png      = $tmp_base . '.png';
-            @unlink( $tmp_base );
+            $png = Watermarker_Temp_Storage::generate_file_path( 'image_', 'png' );
             $im->setImageFormat( 'png' );
             $im->writeImage( $png );
             $im->destroy();
@@ -335,9 +343,14 @@ class Watermarker_PDF_Processor {
      * @return string|null Path to the modified DOCX temp file, or null on failure.
      */
     private function preprocess_docx( $file_path ) {
-        $tmp_base = tempnam( sys_get_temp_dir(), 'wm_docx_' );
-        $tmp      = $tmp_base . '.docx';
-        @unlink( $tmp_base );
+        // DOCX files are ZIP archives. If ZipArchive is unavailable we simply skip
+        // this optional pre-processing step and let the later conversion path decide
+        // whether it can continue (LibreOffice may still be available).
+        if ( ! class_exists( '\ZipArchive' ) ) {
+            return null;
+        }
+
+        $tmp = Watermarker_Temp_Storage::generate_file_path( 'docx_', 'docx' );
         if ( ! copy( $file_path, $tmp ) ) {
             return null;
         }
@@ -409,7 +422,7 @@ class Watermarker_PDF_Processor {
         ];
 
         $ext = strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) );
-        if ( 'docx' !== $ext ) {
+        if ( 'docx' !== $ext || ! class_exists( '\ZipArchive' ) ) {
             return $result;
         }
 
@@ -568,6 +581,16 @@ class Watermarker_PDF_Processor {
             throw new \Exception( "No PHP-native reader for .{$ext} files." );
         }
 
+        // PhpWord can read HTML/RTF without ZipArchive, but DOCX parsing requires it.
+        // convert_office_to_pdf() tries LibreOffice first, so reaching this branch for
+        // a DOCX means we are on the final fallback path and need to fail clearly.
+        if ( 'docx' === $ext && ! class_exists( '\ZipArchive' ) ) {
+            throw new \Exception(
+                'DOCX conversion requires the PHP Zip extension when LibreOffice is not available. '
+                . 'Please ask the site administrator to enable ZipArchive or upload a PDF instead.'
+            );
+        }
+
         // Read per-style line spacing from the DOCX (PhpWord doesn't read w:line).
         $spacing_map = $this->read_docx_spacing_map( $file_path );
 
@@ -576,9 +599,7 @@ class Watermarker_PDF_Processor {
         // Apply the correct line height to each style.
         $this->fix_phpword_all_spacing( $phpWord, $spacing_map );
 
-        $tmp_base = tempnam( sys_get_temp_dir(), 'wm_phpword_' );
-        $output   = $tmp_base . '.pdf';
-        @unlink( $tmp_base );
+        $output = Watermarker_Temp_Storage::generate_file_path( 'phpword_', 'pdf' );
 
         \PhpOffice\PhpWord\Settings::setPdfRendererName( \PhpOffice\PhpWord\Settings::PDF_RENDERER_TCPDF );
         \PhpOffice\PhpWord\Settings::setPdfRendererPath( WATERMARKER_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf' );
@@ -612,14 +633,12 @@ class Watermarker_PDF_Processor {
         @set_time_limit( max( $prev_limit, 120 ) );
 
         // Use an isolated profile directory to allow concurrent conversions.
-        $profile_dir = sys_get_temp_dir() . '/wm_lo_profile_' . uniqid( '', true );
-        @mkdir( $profile_dir, 0700, true );
-
-        $out_dir = sys_get_temp_dir();
+        $profile_dir = untrailingslashit( Watermarker_Temp_Storage::generate_directory_path( 'lo_profile_' ) );
+        $out_dir     = untrailingslashit( Watermarker_Temp_Storage::get_private_temp_dir() );
         $cmd     = sprintf(
             '%s --headless --norestore -env:UserInstallation=file://%s --convert-to pdf --outdir %s %s 2>&1',
             escapeshellarg( $lo ),
-            $profile_dir,
+            str_replace( '%2F', '/', rawurlencode( $profile_dir ) ),
             escapeshellarg( $out_dir ),
             escapeshellarg( $file_path )
         );
