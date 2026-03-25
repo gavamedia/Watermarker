@@ -74,6 +74,12 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
         $pdf->setFontSubsetting( false );
         $pdf->setPrintHeader( false );
         $pdf->setPrintFooter( false );
+
+        // Remove the "Powered by TCPDF" link/watermark that TCPDF adds
+        // to every document. The property is protected, so we use reflection.
+        $ref = new \ReflectionProperty( $pdf, 'tcpdflink' );
+        $ref->setAccessible( true );
+        $ref->setValue( $pdf, false );
         $pdf->SetFont( $this->getFont() );
 
         // Register any custom-uploaded fonts before rendering.
@@ -134,6 +140,20 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
             $html
         );
 
+        // Convert vertical-align: super/sub CSS (which TCPDF ignores) to
+        // proper <sup>/<sub> HTML tags that TCPDF does render.
+        $html = $this->convert_vertical_align_to_tags( $html );
+
+        // Boost line-height: 1 (DOCX single-spacing w:line="240") to match
+        // Word's actual rendering. Word's "single" line spacing is ~1.15×
+        // the font size, but TCPDF interprets line-height: 1 as exactly 1×.
+        // We adjust styled paragraphs to 1.15 to close the gap.
+        $html = preg_replace(
+            '/line-height:\s*1;/',
+            'line-height: 1.15;',
+            $html
+        );
+
         $pdf->writeHTML( $html );
 
         // Document properties.
@@ -146,5 +166,69 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
 
         fwrite( $fileHandle, $pdf->Output( $filename, 'S' ) );
         parent::restoreStateAfterSave( $fileHandle );
+    }
+
+    /**
+     * Convert spans with vertical-align: super/sub CSS into <sup>/<sub> tags.
+     *
+     * PhpWord outputs superscript/subscript as:
+     *   <span style="...vertical-align: super;">text</span>
+     * but TCPDF only renders <sup>/<sub> HTML tags. This method rewrites
+     * those spans to use proper tags.
+     *
+     * @param string $html The HTML content.
+     * @return string Modified HTML.
+     */
+    private function convert_vertical_align_to_tags( $html ) {
+        // Match <span style="...vertical-align: super;...">content</span>
+        // and wrap content in <sup> (removing the vertical-align from style).
+        // We set an explicit font-size on the <sup> tag (58% of parent, matching
+        // Word's superscript sizing) so TCPDF won't apply its own K_SMALL_RATIO.
+        $html = preg_replace_callback(
+            '/<span\s+style="([^"]*vertical-align:\s*super[^"]*)">(.*?)<\/span>/s',
+            function ( $m ) {
+                $style = $m[1];
+                // Extract font-size from the span to calculate superscript size.
+                $supSize = '';
+                if ( preg_match( '/font-size:\s*([\d.]+)pt/', $style, $fs ) ) {
+                    // Word renders superscript at ~58% of the parent font size,
+                    // but TCPDF's <sup> Y-shift (0.7 * fontSizePt) expands the
+                    // line. We use a smaller ratio (0.45) to keep the visual
+                    // weight subtle and the Y-shift small enough that the line
+                    // height stays close to normal.
+                    $sz = round( (float) $fs[1] * 0.5, 1 );
+                    $supSize = ' style="font-size: ' . $sz . 'pt; line-height: 0;"';
+                }
+                $style = preg_replace( '/\s*vertical-align:\s*super;?\s*/', '', $style );
+                $style = trim( $style, '; ' );
+                if ( $style ) {
+                    return '<sup' . $supSize . '><span style="' . $style . '">' . $m[2] . '</span></sup>';
+                }
+                return '<sup' . $supSize . '>' . $m[2] . '</sup>';
+            },
+            $html
+        );
+
+        // Same for subscript.
+        $html = preg_replace_callback(
+            '/<span\s+style="([^"]*vertical-align:\s*sub[^"]*)">(.*?)<\/span>/s',
+            function ( $m ) {
+                $style = $m[1];
+                $subSize = '';
+                if ( preg_match( '/font-size:\s*([\d.]+)pt/', $style, $fs ) ) {
+                    $sz = round( (float) $fs[1] * 0.45, 1 );
+                    $subSize = ' style="font-size: ' . $sz . 'pt; line-height: 0.5;"';
+                }
+                $style = preg_replace( '/\s*vertical-align:\s*sub;?\s*/', '', $style );
+                $style = trim( $style, '; ' );
+                if ( $style ) {
+                    return '<sub' . $subSize . '><span style="' . $style . '">' . $m[2] . '</span></sub>';
+                }
+                return '<sub' . $subSize . '>' . $m[2] . '</sub>';
+            },
+            $html
+        );
+
+        return $html;
     }
 }
