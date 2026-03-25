@@ -231,10 +231,32 @@ class Watermarker_Font_Manager {
         ];
 
         foreach ( self::FONT_FAMILIES as $key => $family ) {
+            // The base family name is the regular variant's TCPDF name.
+            $base_name = $family['variants']['regular'];
+
             foreach ( $family['variants'] as $variant => $tcpdf_name ) {
                 $def_file = $dir . $tcpdf_name . '.php';
                 if ( file_exists( $def_file ) ) {
-                    $pdf->AddFont( $tcpdf_name, '', $def_file );
+                    // Register under the base family name + style so TCPDF
+                    // can find bold/italic variants of the same family.
+                    $pdf->AddFont( $base_name, $style_map[ $variant ], $def_file );
+                }
+            }
+        }
+
+        // Also register using the CSS font-family name that PhpWord generates.
+        // E.g., HTML has font-family:'Aptos' → TCPDF lowercases to 'aptos'.
+        // Ensure TCPDF maps this to our registered font.
+        foreach ( self::FONT_FAMILIES as $key => $family ) {
+            $base_name = $family['variants']['regular'];
+            $css_name  = strtolower( str_replace( ' ', '', $family['label'] ) );
+
+            if ( $css_name !== $base_name ) {
+                foreach ( $family['variants'] as $variant => $tcpdf_name ) {
+                    $def_file = $dir . $tcpdf_name . '.php';
+                    if ( file_exists( $def_file ) ) {
+                        $pdf->AddFont( $css_name, $style_map[ $variant ], $def_file );
+                    }
                 }
             }
         }

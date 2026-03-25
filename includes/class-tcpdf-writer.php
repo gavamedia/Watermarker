@@ -81,12 +81,29 @@ class Watermarker_TCPDF_Writer extends \PhpOffice\PhpWord\Writer\PDF\TCPDF {
 
         $html = $this->getContent();
 
+        // Fix the p,.Normal CSS rule: zero out its margin-bottom so it doesn't
+        // add 8pt to every paragraph. Paragraphs that need spacing have it inline.
+        // Keep line-height for unstyled paragraphs that don't have inline line-height.
+        $html = preg_replace(
+            '/p,\s*\.Normal\s*\{[^}]*\}/',
+            'p, .Normal {margin-top: 0; margin-bottom: 0;}',
+            $html
+        );
+
         // TextBreaks render as bare <p>&nbsp;</p> with no style attr.
-        // In the DOCX these have before=0 after=0, but without inline styles
-        // they inherit the p,.Normal rule's margins. Zero them out explicitly.
+        // Zero them out explicitly so they're just a single blank line.
         $html = str_replace(
             '<p>&nbsp;</p>',
-            '<p style="margin:0; padding:0;">&nbsp;</p>',
+            '<p style="margin:0; padding:0; line-height: 1.15;">&nbsp;</p>',
+            $html
+        );
+
+        // Unstyled content paragraphs (P23-P26) now have no margin from the CSS rule.
+        // They need their spacing back. They only have inline line-height, no margins.
+        // Add margin-bottom to <p> tags that have line-height but no margin in their style.
+        $html = preg_replace(
+            '/<p style="line-height: ([^"]+);">/',
+            '<p style="margin-top: 0; margin-bottom: 4pt; line-height: $1;">',
             $html
         );
 

@@ -22,5 +22,6 @@ OUTPUT.*
 # Unused LibreOffice macro directory
 assets/libreoffice-profile/user/basic/
 
-# User-uploaded fonts (per-server)
-fonts/
+# User-uploaded fonts (per-server) — keep the directory, ignore contents
+fonts/*
+!fonts/.gitkeep
