@@ -76,11 +76,10 @@ class Watermarker_Font_Manager {
     ];
 
     /**
-     * Get the custom fonts directory path.
+     * Get the custom fonts directory path (inside the plugin).
      */
     public static function get_fonts_dir() {
-        $upload_dir = wp_upload_dir();
-        return $upload_dir['basedir'] . '/watermarker-fonts/';
+        return WATERMARKER_PLUGIN_DIR . 'fonts/';
     }
 
     /**
