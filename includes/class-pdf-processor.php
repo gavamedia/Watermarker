@@ -260,114 +260,43 @@ class Watermarker_PDF_Processor {
      * The first font found on the system wins. If none are found, the last
      * entry is used as a safe default (core fonts available everywhere).
      */
-    private const FONT_MAP = [
-        'Aptos'            => [ 'Aptos', 'Helvetica Neue', 'Helvetica', 'Arial' ],
-        'Aptos Display'    => [ 'Aptos Display', 'Helvetica Neue', 'Helvetica', 'Arial' ],
-        'Aptos Narrow'     => [ 'Aptos Narrow', 'Helvetica Neue', 'Helvetica', 'Arial' ],
-        'Calibri'          => [ 'Calibri', 'Helvetica Neue', 'Helvetica', 'Arial' ],
-        'Calibri Light'    => [ 'Calibri Light', 'Helvetica Neue Light', 'Helvetica', 'Arial' ],
-        'Cambria'          => [ 'Cambria', 'Times New Roman', 'Times' ],
-        'Segoe UI'         => [ 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial' ],
-        'Consolas'         => [ 'Consolas', 'Courier New', 'Courier' ],
-        'Cascadia Code'    => [ 'Cascadia Code', 'Courier New', 'Courier' ],
-        'Cascadia Mono'    => [ 'Cascadia Mono', 'Courier New', 'Courier' ],
+    /**
+     * Font substitution map: Microsoft font → TCPDF-safe fallback.
+     * These must be fonts TCPDF can actually render (core PDF fonts or DejaVu).
+     */
+    private const FONT_FALLBACKS = [
+        'Aptos'            => 'Helvetica',
+        'Aptos Display'    => 'Helvetica',
+        'Aptos Narrow'     => 'Helvetica',
+        'Calibri'          => 'Helvetica',
+        'Calibri Light'    => 'Helvetica',
+        'Cambria'          => 'Times',
+        'Segoe UI'         => 'Helvetica',
+        'Consolas'         => 'Courier',
+        'Cascadia Code'    => 'Courier',
+        'Cascadia Mono'    => 'Courier',
     ];
 
-    /** Cache of resolved font substitutions. */
-    private static $resolved_fonts = null;
-
     /**
-     * Build the effective font map by checking which fonts are installed.
-     * Returns [ 'Aptos' => 'Times New Roman', ... ] with only the entries
-     * that actually need substituting.
+     * Get the effective font substitutions. Skips fonts that have been
+     * uploaded via the Font Manager (those will be used directly by TCPDF).
      */
     private static function get_font_substitutions() {
-        if ( null !== self::$resolved_fonts ) {
-            return self::$resolved_fonts;
-        }
-
-        $installed = self::get_installed_fonts();
-        self::$resolved_fonts = [];
-
         // Check which fonts have been uploaded via the Font Manager.
         $uploaded_labels = class_exists( 'Watermarker_Font_Manager' )
             ? Watermarker_Font_Manager::get_installed_font_labels()
             : [];
 
-        foreach ( self::FONT_MAP as $original => $fallbacks ) {
-            // If the original font is installed on the system, no substitution needed.
-            if ( isset( $installed[ strtolower( $original ) ] ) ) {
-                continue;
-            }
-            // If the font was uploaded via the Font Manager, no substitution needed.
+        $subs = [];
+        foreach ( self::FONT_FALLBACKS as $original => $fallback ) {
+            // If the real font was uploaded, no substitution needed.
             if ( in_array( $original, $uploaded_labels, true ) ) {
                 continue;
             }
-            // Find the first available fallback.
-            foreach ( $fallbacks as $candidate ) {
-                if ( $candidate === $original ) {
-                    continue;
-                }
-                if ( isset( $installed[ strtolower( $candidate ) ] ) ) {
-                    self::$resolved_fonts[ $original ] = $candidate;
-                    break;
-                }
-            }
-            // If nothing found, use the last fallback (core font, should always exist).
-            if ( ! isset( self::$resolved_fonts[ $original ] ) ) {
-                self::$resolved_fonts[ $original ] = end( $fallbacks );
-            }
+            $subs[ $original ] = $fallback;
         }
 
-        return self::$resolved_fonts;
-    }
-
-    /**
-     * Get a set of installed font family names (lowercased) on this system.
-     */
-    private static function get_installed_fonts() {
-        static $cache = null;
-        if ( null !== $cache ) {
-            return $cache;
-        }
-
-        $cache = [];
-        $dirs  = [];
-
-        if ( PHP_OS_FAMILY === 'Darwin' ) {
-            $dirs = [
-                '/System/Library/Fonts',
-                '/Library/Fonts',
-                getenv( 'HOME' ) . '/Library/Fonts',
-            ];
-        } elseif ( PHP_OS_FAMILY === 'Linux' ) {
-            $dirs = [
-                '/usr/share/fonts',
-                '/usr/local/share/fonts',
-                getenv( 'HOME' ) . '/.fonts',
-            ];
-        } elseif ( PHP_OS_FAMILY === 'Windows' ) {
-            $dirs = [ getenv( 'WINDIR' ) . '\\Fonts' ];
-        }
-
-        foreach ( $dirs as $dir ) {
-            if ( ! is_dir( $dir ) ) {
-                continue;
-            }
-            $it = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $dir, \FilesystemIterator::SKIP_DOTS ) );
-            foreach ( $it as $file ) {
-                $ext = strtolower( pathinfo( $file->getFilename(), PATHINFO_EXTENSION ) );
-                if ( in_array( $ext, [ 'ttf', 'otf', 'ttc', 'woff', 'woff2' ], true ) ) {
-                    // Derive family name from filename (e.g. "TimesNewRoman-Bold.ttf" → "times new roman").
-                    $name = pathinfo( $file->getFilename(), PATHINFO_FILENAME );
-                    $name = preg_replace( '/[-_](Bold|Italic|Light|Regular|Medium|Thin|Semi|Demi|Extra|Condensed|BoldItalic|It|Bd|Rg|Lt|Bk|Blk).*$/i', '', $name );
-                    $name = preg_replace( '/([a-z])([A-Z])/', '$1 $2', $name ); // CamelCase → spaces.
-                    $cache[ strtolower( trim( $name ) ) ] = true;
-                }
-            }
-        }
-
-        return $cache;
+        return $subs;
     }
 
     private function convert_office_to_pdf( $file_path, $ext ) {
